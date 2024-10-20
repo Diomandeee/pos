@@ -1,0 +1,30 @@
+{
+  "create": {
+    "fixed": {
+      "title": "Fixed",
+      "info": "Set your price for accessing this dataset. The datatoken for this dataset will be worth the entered amount of the selected base token.",
+      "tooltips": {
+        "communityFee": "Goes to Ocean DAO for teams to improve the tools, build apps, do outreach, and more. A small fraction is used to burn OCEAN. This fee is collected when downloading or using an asset in a compute job.",
+        "marketplaceFee": "Goes to the marketplace owner that is hosting and providing the marketplace and is collected when downloading or using an asset in a compute job. In Ocean Market, it is treated as network revenue that goes to the Ocean community."
+      }
+    },
+    "free": {
+      "title": "Free",
+      "info": "Set your dataset as free. The datatoken for this dataset will be given for free via creating a faucet.",
+      "fields": [
+        {
+          "name": "freeAgreement",
+          "type": "checkbox",
+          "options": [
+            "I want this asset to be free. I understand network fees are still to be paid"
+          ]
+        }
+      ]
+    }
+  },
+  "approval": {
+    "tooltips": {
+      "approveSpecific": "Give the smart contract permission to spend your COIN which has to be done for each transaction. You can optionally set this to infinite in your user preferences."
+    }
+  }
+}
