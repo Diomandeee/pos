@@ -2,8 +2,7 @@ import React, { ReactNode, FormEvent, ReactElement } from 'react'
 import Link from 'next/link'
 import classNames from 'classnames/bind'
 import styles from './index.module.css'
-// Q: how to install classnames/bind? 
-// A: npm install classnames @types/classnames
+
 const cx = classNames.bind(styles)
 
 export interface ButtonProps {
