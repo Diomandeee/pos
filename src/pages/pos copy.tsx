@@ -941,57 +941,6 @@ const BufBaristaPOS = () => {
             width: 90%;
             max-width: 300px;
           }
-          .item-controls {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-          }
-  
-          .quantity-button {
-            background: none;
-            border: none;
-            color: var(--primary-color);
-            cursor: pointer;
-            transition: all 0.3s ease;
-          }
-  
-          .quantity-button:hover {
-            color: var(--accent-color);
-          }
-  
-          .item-quantity {
-            font-weight: bold;
-            min-width: 20px;
-            text-align: center;
-          }
-  
-          .remove-item {
-            background: none;
-            border: none;
-            color: var(--danger-color);
-            cursor: pointer;
-            transition: all 0.3s ease;
-          }
-  
-          .remove-item:hover {
-            transform: scale(1.1);
-          }
-  
-          .cart-total {
-            display: flex;
-            justify-content: space-between;
-            font-weight: bold;
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 2px solid var(--border-color);
-          }
-  
-          .running-total {
-            margin-top: 1rem;
-            font-weight: bold;
-            color: var(--accent-color);
-          }
-  
         }
       `}</style>
     </div>
