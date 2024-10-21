@@ -9,7 +9,9 @@ import {
   Moon,
   Sun,
   Search,
-  Bell
+  Bell,
+  Plus,
+  Minus
 } from 'lucide-react'
 import Link from 'next/link'
 import Button from '@shared/atoms/Button'
@@ -52,12 +54,12 @@ const BufBaristaPOS = () => {
     organization: ''
   })
   const [orderNumber, setOrderNumber] = useState(1)
-  const [selectedCategory, setSelectedCategory] = useState('Coffee')
+  const [selectedCategory, setSelectedCategory] = useState('All')
   const [isComplimentaryMode, setIsComplimentaryMode] = useState(true)
   const [queueStartTime, setQueueStartTime] = useState(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isFlavorModalOpen, setIsFlavorModalOpen] = useState(false)
-  const [isDarkMode, setIsDarkMode] = useState(true)
+  const [isDarkMode, setIsDarkMode] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [runningTotal, setRunningTotal] = useState(0)
   const [notification, setNotification] = useState(null)
@@ -80,6 +82,11 @@ const BufBaristaPOS = () => {
       setIsDarkMode(JSON.parse(savedDarkMode))
     }
 
+    const savedComplimentaryMode = localStorage.getItem('complimentaryMode')
+    if (savedComplimentaryMode) {
+      setIsComplimentaryMode(JSON.parse(savedComplimentaryMode))
+    }
+
     setQueueStartTime(new Date())
   }, [])
 
@@ -87,6 +94,13 @@ const BufBaristaPOS = () => {
     localStorage.setItem('darkMode', JSON.stringify(isDarkMode))
     document.body.classList.toggle('dark-mode', isDarkMode)
   }, [isDarkMode])
+
+  useEffect(() => {
+    localStorage.setItem(
+      'complimentaryMode',
+      JSON.stringify(isComplimentaryMode)
+    )
+  }, [isComplimentaryMode])
 
   const showNotification = useCallback((message) => {
     setNotification(message)
@@ -100,10 +114,20 @@ const BufBaristaPOS = () => {
         setSelectedFlavor('')
         setIsFlavorModalOpen(true)
       } else {
-        setCart((prevCart) => [
-          ...prevCart,
-          { ...item, flavor: null, quantity: 1 }
-        ])
+        setCart((prevCart) => {
+          const existingItem = prevCart.find(
+            (cartItem) => cartItem.id === item.id && cartItem.flavor === null
+          )
+          if (existingItem) {
+            return prevCart.map((cartItem) =>
+              cartItem.id === item.id && cartItem.flavor === null
+                ? { ...cartItem, quantity: cartItem.quantity + 1 }
+                : cartItem
+            )
+          } else {
+            return [...prevCart, { ...item, flavor: null, quantity: 1 }]
+          }
+        })
         setRunningTotal((prevTotal) => prevTotal + item.price)
         showNotification(`Added ${item.name} to cart`)
       }
@@ -118,7 +142,23 @@ const BufBaristaPOS = () => {
         flavor: selectedFlavor === 'No Flavoring' ? null : selectedFlavor,
         quantity: 1
       }
-      setCart((prevCart) => [...prevCart, flavoredCoffee])
+      setCart((prevCart) => {
+        const existingItem = prevCart.find(
+          (item) =>
+            item.id === flavoredCoffee.id &&
+            item.flavor === flavoredCoffee.flavor
+        )
+        if (existingItem) {
+          return prevCart.map((item) =>
+            item.id === flavoredCoffee.id &&
+            item.flavor === flavoredCoffee.flavor
+              ? { ...item, quantity: item.quantity + 1 }
+              : item
+          )
+        } else {
+          return [...prevCart, flavoredCoffee]
+        }
+      })
       setRunningTotal((prevTotal) => prevTotal + selectedCoffeeItem.price)
       showNotification(
         `Added ${selectedCoffeeItem.name}${
@@ -139,6 +179,16 @@ const BufBaristaPOS = () => {
         newCart.splice(index, 1)
       }
       setRunningTotal((prevTotal) => prevTotal - item.price)
+      return newCart
+    })
+  }, [])
+
+  const increaseQuantity = useCallback((index) => {
+    setCart((prevCart) => {
+      const newCart = [...prevCart]
+      const item = newCart[index]
+      newCart[index] = { ...item, quantity: item.quantity + 1 }
+      setRunningTotal((prevTotal) => prevTotal + item.price)
       return newCart
     })
   }, [])
@@ -196,6 +246,7 @@ const BufBaristaPOS = () => {
     queueStartTime,
     showNotification
   ])
+
   const filteredMenuItems = useMemo(
     () =>
       menuItems.filter(
@@ -271,10 +322,21 @@ const BufBaristaPOS = () => {
                     {item.flavor && (
                       <span className="item-flavor"> ({item.flavor})</span>
                     )}
-                    {' x'}
-                    {item.quantity}
                   </span>
-                  <div>
+                  <div className="item-controls">
+                    <button
+                      onClick={() => removeFromCart(index)}
+                      className="quantity-button"
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="item-quantity">{item.quantity}</span>
+                    <button
+                      onClick={() => increaseQuantity(index)}
+                      className="quantity-button"
+                    >
+                      <Plus size={16} />
+                    </button>
                     <span className="item-price">
                       {isComplimentaryMode
                         ? ''
@@ -311,6 +373,9 @@ const BufBaristaPOS = () => {
 
           <Link href="/orders" passHref>
             <button className="view-orders-button">View Orders</button>
+          </Link>
+          <Link href="/reports" passHref>
+            <button className="view-orders-button">View Reports</button>
           </Link>
         </section>
 
@@ -440,7 +505,7 @@ const BufBaristaPOS = () => {
         </div>
       )}
 
-      <style>{`
+      <style jsx>{`
         :root {
           --primary-color: #4a90e2;
           --secondary-color: #50e3c2;
@@ -461,6 +526,7 @@ const BufBaristaPOS = () => {
           display: flex;
           flex-direction: column;
         }
+
         .pos-header {
           display: flex;
           justify-content: space-between;
@@ -520,6 +586,8 @@ const BufBaristaPOS = () => {
           flex: 2;
           border-radius: 10px;
           padding: 1.5rem;
+          background-color: white;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .cart-section {
@@ -527,6 +595,8 @@ const BufBaristaPOS = () => {
           border-radius: 10px;
           padding: 1.5rem;
           height: fit-content;
+          background-color: white;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .section-title {
@@ -614,6 +684,30 @@ const BufBaristaPOS = () => {
           align-items: center;
           padding: 0.75rem 0;
           border-bottom: 1px solid var(--border-color);
+        }
+
+        .item-controls {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        .quantity-button {
+          background: none;
+          border: none;
+          color: var(--primary-color);
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .quantity-button:hover {
+          color: var(--accent-color);
+        }
+
+        .item-quantity {
+          font-weight: bold;
+          min-width: 20px;
+          text-align: center;
         }
 
         .remove-item {
@@ -874,8 +968,26 @@ const BufBaristaPOS = () => {
           }
 
           .modal-content {
-            width: 90%;
-            max-width: 300px;
+            width: 95%;
+            max-width: 350px;
+          }
+
+          .pos-header {
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1rem;
+          }
+
+          .search-container {
+            width: 100%;
+          }
+
+          .search-input {
+            width: 100%;
+          }
+
+          .mode-button {
+            width: 100%;
           }
         }
       `}</style>
