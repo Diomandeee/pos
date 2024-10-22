@@ -1,5 +1,3 @@
-'use client'
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Coffee,
@@ -11,30 +9,51 @@ import {
   Search,
   Bell,
   Plus,
-  Minus
+  Minus,
+  FileText,
+  Star,
+  Clock,
+  CalendarDays
 } from 'lucide-react'
 import Link from 'next/link'
 import Button from '@shared/atoms/Button'
+import { format } from 'date-fns'
 
 const menuItems = [
-  { id: 1, name: 'Espresso', price: 2.5, category: 'Coffee' },
-  { id: 2, name: 'Americano', price: 3.0, category: 'Coffee' },
-  { id: 3, name: 'Latte', price: 3.5, category: 'Coffee' },
-  { id: 4, name: 'Cappuccino', price: 3.5, category: 'Coffee' },
-  { id: 5, name: 'Caramel Crunch Crusher', price: 4.5, category: 'Specialty' },
-  { id: 6, name: 'Vanilla Dream Latte', price: 4.5, category: 'Specialty' },
+  { id: 1, name: 'Espresso', price: 2.5, category: 'Coffee', popular: true },
+  { id: 2, name: 'Americano', price: 3.0, category: 'Coffee', popular: false },
+  { id: 3, name: 'Latte', price: 3.5, category: 'Coffee', popular: true },
+  { id: 4, name: 'Cappuccino', price: 3.5, category: 'Coffee', popular: true },
+  {
+    id: 5,
+    name: 'Caramel Crunch Crusher',
+    price: 4.5,
+    category: 'Specialty',
+    popular: true
+  },
+  {
+    id: 6,
+    name: 'Vanilla Dream Latte',
+    price: 4.5,
+    category: 'Specialty',
+    popular: false
+  },
   {
     id: 7,
     name: 'Hazelnut Heaven Cappuccino',
     price: 4.5,
-    category: 'Specialty'
+    category: 'Specialty',
+    popular: false
   },
-  { id: 8, name: 'Green Tea', price: 2.5, category: 'Tea' },
-  { id: 9, name: 'Black Tea', price: 2.5, category: 'Tea' },
-  { id: 10, name: 'Chai Tea', price: 3.0, category: 'Tea' },
-  { id: 11, name: 'Croissant', price: 2.0, category: 'Pastries' },
-  { id: 12, name: 'Flat White', price: 3.5, category: 'Coffee' },
-  { id: 14, name: 'Cortado', price: 3.5, category: 'Coffee' }
+
+  {
+    id: 12,
+    name: 'Flat White',
+    price: 3.5,
+    category: 'Coffee',
+    popular: false
+  },
+  { id: 14, name: 'Cortado', price: 3.5, category: 'Coffee', popular: false }
 ]
 
 const flavorOptions = [
@@ -47,24 +66,46 @@ const flavorOptions = [
 ]
 
 const BufBaristaPOS = () => {
+  // Basic state
   const [cart, setCart] = useState([])
   const [customerInfo, setCustomerInfo] = useState({
     firstName: '',
     lastInitial: '',
-    organization: ''
+    organization: '',
+    email: '',
+    phone: ''
   })
+  const [orderNotes, setOrderNotes] = useState('')
   const [orderNumber, setOrderNumber] = useState(1)
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [isComplimentaryMode, setIsComplimentaryMode] = useState(true)
   const [queueStartTime, setQueueStartTime] = useState(null)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isFlavorModalOpen, setIsFlavorModalOpen] = useState(false)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [runningTotal, setRunningTotal] = useState(0)
+  const [quickNotes, setQuickNotes] = useState([])
+
+  // Modal states
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isFlavorModalOpen, setIsFlavorModalOpen] = useState(false)
+  const [isQuickNoteModalOpen, setIsQuickNoteModalOpen] = useState(false)
   const [notification, setNotification] = useState(null)
   const [selectedFlavor, setSelectedFlavor] = useState('')
   const [selectedCoffeeItem, setSelectedCoffeeItem] = useState(null)
+  const [showPopular, setShowPopular] = useState(false)
+
+  // Load saved quick notes
+  useEffect(() => {
+    const savedQuickNotes = localStorage.getItem('quickNotes')
+    if (savedQuickNotes) {
+      setQuickNotes(JSON.parse(savedQuickNotes))
+    }
+  }, [])
+
+  // Save quick notes
+  useEffect(() => {
+    localStorage.setItem('quickNotes', JSON.stringify(quickNotes))
+  }, [quickNotes])
 
   const categories = useMemo(
     () => ['All', ...new Set(menuItems.map((item) => item.category))],
@@ -206,6 +247,20 @@ const BufBaristaPOS = () => {
     setIsModalOpen(true)
   }, [cart])
 
+  const addQuickNote = useCallback((note) => {
+    setOrderNotes((prev) => (prev ? `${prev}\n${note}` : note))
+  }, [])
+
+  const saveQuickNote = useCallback(
+    (note) => {
+      if (note && !quickNotes.includes(note)) {
+        setQuickNotes((prev) => [...prev, note])
+        showNotification('Quick note saved!')
+      }
+    },
+    [quickNotes, showNotification]
+  )
+
   const confirmOrder = useCallback(() => {
     if (!customerInfo.firstName || !customerInfo.lastInitial) return
 
@@ -213,8 +268,9 @@ const BufBaristaPOS = () => {
     const newOrder = {
       id: orderNumber,
       customerName: `${customerInfo.firstName} ${customerInfo.lastInitial}.`,
-      customerOrganization: customerInfo.organization,
+      customerInfo: { ...customerInfo },
       items: [...cart],
+      notes: orderNotes,
       timestamp: orderStartTime.toLocaleString(),
       status: 'Pending',
       total: calculateTotal(),
@@ -231,7 +287,14 @@ const BufBaristaPOS = () => {
     localStorage.setItem('lastOrderNumber', orderNumber.toString())
 
     setCart([])
-    setCustomerInfo({ firstName: '', lastInitial: '', organization: '' })
+    setCustomerInfo({
+      firstName: '',
+      lastInitial: '',
+      organization: '',
+      email: '',
+      phone: ''
+    })
+    setOrderNotes('')
     setOrderNumber(orderNumber + 1)
     setQueueStartTime(new Date())
     setRunningTotal(0)
@@ -244,7 +307,8 @@ const BufBaristaPOS = () => {
     calculateTotal,
     isComplimentaryMode,
     queueStartTime,
-    showNotification
+    showNotification,
+    orderNotes
   ])
 
   const filteredMenuItems = useMemo(
@@ -252,9 +316,10 @@ const BufBaristaPOS = () => {
       menuItems.filter(
         (item) =>
           (selectedCategory === 'All' || item.category === selectedCategory) &&
-          item.name.toLowerCase().includes(searchTerm.toLowerCase())
+          item.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+          (!showPopular || item.popular)
       ),
-    [selectedCategory, searchTerm]
+    [selectedCategory, searchTerm, showPopular]
   )
 
   const handleKeyPress = useCallback(
@@ -283,10 +348,19 @@ const BufBaristaPOS = () => {
   return (
     <div className={`pos-container ${isDarkMode ? 'dark-mode' : ''}`}>
       <header className="pos-header">
-        <button onClick={toggleServiceMode} className="mode-button">
-          {isComplimentaryMode ? <Gift /> : <DollarSign />}
-          {isComplimentaryMode ? 'Complimentary' : 'Pop-up'}
-        </button>
+        <div className="header-left">
+          <button onClick={toggleServiceMode} className="mode-button">
+            {isComplimentaryMode ? <Gift /> : <DollarSign />}
+            {isComplimentaryMode ? 'Complimentary' : 'Pop-up'}
+          </button>
+          <button
+            onClick={() => setShowPopular(!showPopular)}
+            className={`mode-button ${showPopular ? 'active' : ''}`}
+          >
+            <Star />
+            Popular Items
+          </button>
+        </div>
 
         <div className="search-container">
           <Search />
@@ -299,12 +373,22 @@ const BufBaristaPOS = () => {
           />
         </div>
 
-        <button
-          onClick={() => setIsDarkMode(!isDarkMode)}
-          className="mode-button"
-        >
-          {isDarkMode ? <Sun /> : <Moon />}
-        </button>
+        <div className="header-right">
+          <span className="current-time">
+            <Clock size={16} />
+            {format(new Date(), 'HH:mm')}
+          </span>
+          <span className="current-date">
+            <CalendarDays size={16} />
+            {format(new Date(), 'MMM dd, yyyy')}
+          </span>
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="mode-button"
+          >
+            {isDarkMode ? <Sun /> : <Moon />}
+          </button>
+        </div>
       </header>
 
       <main className="pos-main">
@@ -354,21 +438,43 @@ const BufBaristaPOS = () => {
             </ul>
           )}
 
+          <div className="order-notes-section">
+            <textarea
+              value={orderNotes}
+              onChange={(e) => setOrderNotes(e.target.value)}
+              placeholder="Add notes about this order..."
+              className="notes-input"
+            />
+            <div className="quick-notes">
+              <div className="quick-note-chips">
+                {quickNotes.map((note, index) => (
+                  <button
+                    key={index}
+                    onClick={() => addQuickNote(note)}
+                    className="quick-note-chip"
+                  >
+                    {note}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="cart-total">
             <span>Total:</span>
             <span>{isComplimentaryMode ? '' : `$${calculateTotal()}`}</span>
           </div>
 
-          <div className="running-total">
+          {/* <div className="running-total">
             Running Total: ${runningTotal.toFixed(2)}
-          </div>
+          </div> */}
 
           <button
             onClick={handlePlaceOrder}
             disabled={cart.length === 0}
             className="place-order-button"
           >
-            Place Order (Ctrl + Enter)
+            Place Order
           </button>
 
           <Link href="/orders" passHref>
@@ -382,15 +488,15 @@ const BufBaristaPOS = () => {
         <section className="menu-section">
           <div className="category-filters">
             {categories.map((category) => (
-              <Button
+              <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
                 className={`category-button ${
-                  selectedCategory === category ? 'active' : ''
+                  category === selectedCategory ? 'active' : ''
                 }`}
               >
                 {category}
-              </Button>
+              </button>
             ))}
           </div>
 
@@ -402,7 +508,10 @@ const BufBaristaPOS = () => {
                 className="menu-item"
               >
                 <Coffee className="item-icon" />
-                <h3 className="item-name">{item.name}</h3>
+                <h3 className="item-name">
+                  {item.name}
+                  {item.popular && <Star className="popular-icon" size={16} />}
+                </h3>
                 <p className="item-price">
                   {isComplimentaryMode ? '' : `$${item.price.toFixed(2)}`}
                 </p>
@@ -447,6 +556,30 @@ const BufBaristaPOS = () => {
                 })
               }
               placeholder="Organization (Optional)"
+              className="modal-input"
+            />
+            <input
+              type="email"
+              value={customerInfo.email}
+              onChange={(e) =>
+                setCustomerInfo({
+                  ...customerInfo,
+                  email: e.target.value
+                })
+              }
+              placeholder="Email (Optional)"
+              className="modal-input"
+            />
+            <input
+              type="tel"
+              value={customerInfo.phone}
+              onChange={(e) =>
+                setCustomerInfo({
+                  ...customerInfo,
+                  phone: e.target.value
+                })
+              }
+              placeholder="Phone (Optional)"
               className="modal-input"
             />
             <div className="modal-buttons">
@@ -498,13 +631,27 @@ const BufBaristaPOS = () => {
         </div>
       )}
 
+      {isQuickNoteModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="modal-title">Add Quick Note</h3>
+            <textarea
+              placeholder="Enter a quick note to save for future use..."
+              className="modal-textarea"
+              id="quickNoteInput"
+            />
+          </div>
+        </div>
+      )}
+
       {notification && (
         <div className="notification">
           <Bell size={16} />
           {notification}
         </div>
       )}
-      <style>{`
+      <style jsx>{`
+        /* Base Variables */
         :root {
           --primary-color: #4a90e2;
           --secondary-color: #50e3c2;
@@ -517,21 +664,41 @@ const BufBaristaPOS = () => {
           --danger-color: #dc3545;
         }
 
+        /* Container Styles */
         .pos-container {
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          font-family: Arial, sans-serif;
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 20px;
           background-color: var(--background-color);
-          color: var(--text-color);
-          min-height: 100vh;
-          display: flex;
-          flex-direction: column;
         }
+
+        /* Header Styles */
         .pos-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 1rem 2rem;
-          background-color: var(--primary-color);
+          margin-bottom: 20px;
+          padding: 15px;
+          background-color: white;
+          border-radius: 8px;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-left,
+        .header-right {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .current-time,
+        .current-date {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          color: #495057;
+          font-size: 14px;
         }
 
         .mode-button {
@@ -556,41 +723,36 @@ const BufBaristaPOS = () => {
         .search-container {
           display: flex;
           align-items: center;
+          gap: 10px;
+          padding: 8px 12px;
+          border: 1px solid #ddd;
+          border-radius: 6px;
           background-color: white;
-          border-radius: 20px;
-          padding: 0.5rem 1rem;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .search-input {
+          flex: 1;
           border: none;
           outline: none;
-          margin-left: 0.5rem;
           font-size: 14px;
-          width: 200px;
+          padding: 4px;
+          min-width: 200px;
         }
 
+        /* Main Layout */
         .pos-main {
-          display: flex;
-          flex: 1;
-          padding: 2rem;
-          gap: 2rem;
-          max-width: 1400px;
-          margin: 0 auto;
-          width: 100%;
+          display: grid;
+          grid-template-columns: 1fr 2fr;
+          gap: 20px;
         }
 
+        /* Menu Section */
         .menu-section {
-          flex: 2;
-          border-radius: 10px;
-          padding: 1.5rem;
-        }
-
-        .cart-section {
-          flex: 1;
-          border-radius: 10px;
-          padding: 1.5rem;
-          height: fit-content;
+          background-color: white;
+          border-radius: 8px;
+          padding: 20px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          align-items: center;
         }
 
         .section-title {
@@ -607,22 +769,24 @@ const BufBaristaPOS = () => {
           flex-wrap: wrap;
           gap: 0.5rem;
           margin-bottom: 1.5rem;
+          justify-content: center;
         }
 
         .category-button {
           padding: 0.5rem 1rem;
           border: none;
           border-radius: 20px;
-          background-color: var(--background-color);
-          color: var(--text-color);
           font-size: 14px;
+          font-weight: bold;
           cursor: pointer;
           transition: all 0.3s ease;
+          background-color: ghostwhite;
+          color: var(--primary-color);
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
         }
-
         .category-button.active {
           background-color: var(--primary-color);
-          color: white;
+          color: teal;
           transform: translateY(-2px);
         }
 
@@ -642,6 +806,7 @@ const BufBaristaPOS = () => {
           transition: all 0.3s ease;
           cursor: pointer;
           background-color: white;
+          position: relative;
         }
 
         .menu-item:hover {
@@ -652,6 +817,13 @@ const BufBaristaPOS = () => {
         .item-icon {
           color: var(--primary-color);
           margin-bottom: 0.5rem;
+        }
+
+        .popular-icon {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          color: var(--warning-color);
         }
 
         .item-name {
@@ -667,6 +839,21 @@ const BufBaristaPOS = () => {
           font-weight: bold;
         }
 
+        /* Cart Section */
+        .cart-section {
+          background-color: white;
+          border-radius: 8px;
+          padding: 20px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .empty-cart {
+          text-align: center;
+          color: #666;
+          font-style: italic;
+          margin-top: 1rem;
+        }
+
         .cart-items {
           list-style-type: none;
           padding: 0;
@@ -680,12 +867,50 @@ const BufBaristaPOS = () => {
           border-bottom: 1px solid var(--border-color);
         }
 
-        .remove-item {
+        .item-customization {
+          font-size: 14px;
+          color: var(--accent-color);
+          font-style: italic;
+        }
+
+        .item-controls {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        .quantity-button {
           background: none;
           border: none;
+          color: var(--primary-color);
+          cursor: pointer;
+          padding: 0.25rem;
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.3s ease;
+        }
+
+        .quantity-button:hover {
+          background-color: var(--background-color);
+        }
+
+        .item-quantity {
+          font-weight: bold;
+          min-width: 24px;
+          text-align: center;
+        }
+
+        .remove-item {
           color: var(--danger-color);
           cursor: pointer;
           transition: all 0.3s ease;
+          background: none;
+          border: none;
+          padding: 4px;
+          display: flex;
+          align-items: center;
         }
 
         .remove-item:hover {
@@ -707,6 +932,91 @@ const BufBaristaPOS = () => {
           color: var(--accent-color);
         }
 
+        /* Notes Section */
+        .order-notes-section {
+          margin-top: 15px;
+          padding: 12px;
+          background-color: #f8f9fa;
+          border-radius: 8px;
+          border: 1px solid #e9ecef;
+        }
+
+        .notes-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 8px;
+          color: #495057;
+          font-weight: 500;
+        }
+
+        .notes-input {
+          width: 100%;
+          min-height: 80px;
+          padding: 8px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          margin-bottom: 8px;
+          font-size: 14px;
+          line-height: 1.5;
+          resize: vertical;
+          font-family: inherit;
+        }
+
+        .quick-notes {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .quick-note-button {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 8px 16px;
+          border: none;
+          border-radius: 5px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          background-color: #4a90e2;
+          color: white;
+        }
+
+        .quick-note-button:hover {
+          background-color: #357abd;
+          transform: translateY(-2px);
+        }
+
+        .quick-note-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .quick-note-chip {
+          padding: 6px 12px;
+          border: none;
+          border-radius: 15px;
+          background-color: #e9ecef;
+          color: #495057;
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .quick-note-chip:hover {
+          background-color: #4a90e2;
+          color: white;
+          transform: translateY(-2px);
+        }
+
+        /* Action Buttons */
         .place-order-button,
         .view-orders-button {
           width: 100%;
@@ -718,40 +1028,40 @@ const BufBaristaPOS = () => {
           font-weight: bold;
           cursor: pointer;
           transition: all 0.3s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
         }
 
         .place-order-button {
-          background-color: var(--primary-color);
+          background-color: #28a745;
           color: white;
         }
 
         .place-order-button:hover {
-          background-color: #3a7bc8;
+          background-color: #218838;
           transform: translateY(-2px);
         }
 
         .place-order-button:disabled {
-          background-color: #b0b0b0;
+          background-color: #e9ecef;
+          color: #6c757d;
           cursor: not-allowed;
+          transform: none;
         }
 
         .view-orders-button {
-          background-color: var(--secondary-color);
+          background-color: #17a2b8;
           color: white;
         }
 
         .view-orders-button:hover {
-          background-color: #3cc9ac;
+          background-color: #138496;
           transform: translateY(-2px);
         }
 
-        .empty-cart {
-          text-align: center;
-          color: #666;
-          font-style: italic;
-          margin-top: 1rem;
-        }
-
+        /* Modal Styles */
         .modal-overlay {
           position: fixed;
           top: 0;
@@ -762,41 +1072,100 @@ const BufBaristaPOS = () => {
           display: flex;
           justify-content: center;
           align-items: center;
+          z-index: 1000;
         }
 
         .modal-content {
           background-color: white;
-          padding: 2rem;
+          padding: 25px;
           border-radius: 10px;
+          max-width: 500px;
           width: 90%;
-          max-width: 400px;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          max-height: 90vh;
+          overflow-y: auto;
         }
 
         .modal-title {
           font-size: 20px;
           font-weight: bold;
-          margin-bottom: 1rem;
-          color: var(--primary-color);
+          margin-bottom: 20px;
+          color: #333;
         }
 
-        .modal-input {
+        .section-subtitle {
+          font-size: 16px;
+          color: #495057;
+          margin-bottom: 10px;
+        }
+
+        .modal-input,
+        .modal-textarea {
           width: 100%;
-          padding: 0.75rem;
-          margin-bottom: 1rem;
-          border: 1px solid var(--border-color);
-          border-radius: 5px;
+          padding: 8px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          margin-bottom: 15px;
           font-size: 14px;
+          font-family: inherit;
+        }
+
+        .modal-textarea {
+          min-height: 100px;
+          resize: vertical;
+        }
+
+        .customization-section {
+          margin-bottom: 20px;
+        }
+
+        .milk-options {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .milk-button,
+        .flavor-button {
+          width: 100%;
+          padding: 10px;
+          border: 1px solid #e9ecef;
+          border-radius: 5px;
+          background-color: white;
+          color: #495057;
+          font-size: 14px;
+          cursor: pointer;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          transition: all 0.3s ease;
+        }
+
+        .milk-button:hover,
+        .flavor-button:hover {
+          background-color: #f8f9fa;
+        }
+
+        .milk-button.selected,
+        .flavor-button.selected {
+          background-color: #4a90e2;
+          color: white;
+          border-color: #4a90e2;
+        }
+
+        .milk-price {
+          font-size: 12px;
+          opacity: 0.8;
         }
 
         .modal-buttons {
           display: flex;
-          justify-content: space-between;
-          margin-top: 1.5rem;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-top: 20px;
         }
 
         .modal-button {
-          padding: 0.75rem 1.5rem;
+          padding: 8px 16px;
           border: none;
           border-radius: 5px;
           font-size: 14px;
@@ -806,12 +1175,12 @@ const BufBaristaPOS = () => {
         }
 
         .modal-button.confirm {
-          background-color: var(--primary-color);
+          background-color: #28a745;
           color: white;
         }
 
         .modal-button.cancel {
-          background-color: var(--danger-color);
+          background-color: #dc3545;
           color: white;
         }
 
@@ -819,19 +1188,28 @@ const BufBaristaPOS = () => {
           transform: translateY(-2px);
         }
 
+        .modal-button:disabled {
+          background-color: #e9ecef;
+          color: #6c757d;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        /* Notification */
         .notification {
           position: fixed;
           bottom: 20px;
           right: 20px;
-          background-color: var(--primary-color);
+          padding: 12px 20px;
+          border-radius: 6px;
+          background-color: #4a90e2;
           color: white;
-          padding: 1rem 1.5rem;
-          border-radius: 5px;
           display: flex;
           align-items: center;
-          gap: 0.5rem;
+          gap: 10px;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-          animation: slideIn 0.3s ease-out;
+          animation: slide In 0.3s ease-out;
+          z-index: 1000;
         }
 
         @keyframes slideIn {
@@ -845,6 +1223,7 @@ const BufBaristaPOS = () => {
           }
         }
 
+        /* Dark Mode Styles */
         .dark-mode {
           --background-color: #1a1a1a;
           --text-color: #f0f0f0;
@@ -859,23 +1238,23 @@ const BufBaristaPOS = () => {
           color: var(--text-color);
         }
 
-        .dark-mode .menu-item,
-        .dark-mode .cart-item,
-        .dark-mode .modal-content,
+        .dark-mode .pos-header,
         .dark-mode .menu-section,
-        .dark-mode .cart-section {
+        .dark-mode .cart-section,
+        .dark-mode .modal-content,
+        .dark-mode .menu-item {
           background-color: #2c2c2c;
           color: var(--text-color);
         }
 
-        .dark-mode .menu-item:hover {
+        .dark-mode .search-container {
           background-color: #3c3c3c;
+          border-color: #444;
         }
 
-        .dark-mode .modal-input {
+        .dark-mode .search-input {
           background-color: #3c3c3c;
           color: var(--text-color);
-          border-color: var(--border-color);
         }
 
         .dark-mode .category-button {
@@ -888,48 +1267,96 @@ const BufBaristaPOS = () => {
           color: white;
         }
 
-        .flavor-button {
-          width: 100%;
-          margin: 5px 0;
-          padding: 10px;
-          background-color: var(--secondary-color);
+        .dark-mode .order-notes-section {
+          background-color: #2c2c2c;
+          border-color: #444;
+        }
+
+        .dark-mode .notes-input,
+        .dark-mode .modal-input,
+        .dark-mode .modal-textarea {
+          background-color: #3c3c3c;
+          border-color: #444;
+          color: var(--text-color);
+        }
+
+        .dark-mode .quick-note-chip {
+          background-color: #3c3c3c;
+          color: #f0f0f0;
+        }
+
+        .dark-mode .milk-button,
+        .dark-mode .flavor-button {
+          background-color: #3c3c3c;
+          border-color: #444;
+          color: var(--text-color);
+        }
+
+        .dark-mode .milk-button.selected,
+        .dark-mode .flavor-button.selected {
+          background-color: var(--primary-color);
           color: white;
-          border: none;
-          border-radius: 5px;
-          cursor: pointer;
-          transition: background-color 0.3s ease;
         }
 
-        .flavor-button:hover {
-          background-color: #3cc9ac;
+        .dark-mode .quantity-button {
+          color: var(--secondary-color);
         }
 
-        .flavor-button.selected {
-          background-color: var(--accent-color);
+        .dark-mode .remove-item {
+          color: #ff6b6b;
         }
 
-        .item-flavor {
-          font-style: italic;
-          color: var(--accent-color);
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+          .pos-container {
+            padding: 10px;
+          }
+
+          .pos-main {
+            grid-template-columns: 1fr;
+            gap: 15px;
+          }
+
+          .menu-grid {
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+          }
         }
 
         @media (max-width: 768px) {
-          .pos-main {
+          .pos-header {
             flex-direction: column;
+            gap: 10px;
+            padding: 10px;
           }
 
-          .menu-section,
-          .cart-section {
+          .header-left,
+          .header-right {
+            width: 100%;
+            justify-content: space-between;
+          }
+
+          .search-container {
             width: 100%;
           }
 
           .menu-grid {
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+          }
+
+          .cart-item {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .item-controls {
+            width: 100%;
+            justify-content: flex-end;
+            margin-top: 8px;
           }
 
           .category-filters {
-            flex-wrap: nowrap;
             overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
             padding-bottom: 10px;
           }
 
@@ -938,64 +1365,153 @@ const BufBaristaPOS = () => {
           }
 
           .modal-content {
+            width: 95%;
+            margin: 10px;
+            padding: 15px;
+          }
+
+          .modal-buttons {
+            flex-direction: column;
+            gap: 8px;
+          }
+
+          .modal-button {
+            width: 100%;
+          }
+
+          .quick-note-chips {
+            max-height: 120px;
+            overflow-y: auto;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .menu-grid {
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+          }
+
+          .menu-item {
+            padding: 0.75rem;
+          }
+
+          .item-name {
+            font-size: 14px;
+          }
+
+          .modal-content {
+            padding: 15px;
+          }
+
+          .notification {
             width: 90%;
-            max-width: 300px;
+            left: 5%;
+            right: 5%;
           }
-          .item-controls {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+        }
+
+        /* Print Styles */
+        @media print {
+          .pos-container {
+            background: white;
           }
-  
-          .quantity-button {
-            background: none;
-            border: none;
-            color: var(--primary-color);
-            cursor: pointer;
-            transition: all 0.3s ease;
+
+          .pos-header,
+          .menu-section,
+          .mode-button,
+          .search-container,
+          .category-filters,
+          .place-order-button,
+          .view-orders-button {
+            display: none;
           }
-  
-          .quantity-button:hover {
-            color: var(--accent-color);
+
+          .cart-section {
+            width: 100%;
+            box-shadow: none;
           }
-  
-          .item-quantity {
-            font-weight: bold;
-            min-width: 20px;
-            text-align: center;
+
+          .cart-items {
+            border: 1px solid #ddd;
           }
-  
+
+          .notification {
+            display: none;
+          }
+        }
+
+        /* Accessibility */
+        @media (prefers-reduced-motion: reduce) {
+          * {
+            animation: none !important;
+            transition: none !important;
+          }
+        }
+
+        /* High Contrast Mode */
+        @media (prefers-contrast: more) {
+          :root {
+            --primary-color: #0056b3;
+            --secondary-color: #006644;
+            --accent-color: #cc7700;
+            --text-color: #000000;
+            --background-color: #ffffff;
+            --border-color: #000000;
+          }
+
+          .dark-mode {
+            --text-color: #ffffff;
+            --background-color: #000000;
+            --border-color: #ffffff;
+          }
+
+          .button,
+          .modal-button,
+          .quick-note-button {
+            border: 2px solid currentColor;
+          }
+        }
+
+        /* Focus Styles */
+        .button:focus,
+        .modal-button:focus,
+        .menu-item:focus,
+        .quick-note-button:focus,
+        .quick-note-chip:focus {
+          outline: 2px solid var(--primary-color);
+          outline-offset: 2px;
+        }
+
+        .search-input:focus,
+        .notes-input:focus,
+        .modal-input:focus,
+        .modal-textarea:focus {
+          outline: 2px solid var(--primary-color);
+          border-color: var(--primary-color);
+        }
+
+        /* Touch Device Optimizations */
+        @media (hover: none) {
+          .button:hover,
+          .modal-button:hover,
+          .menu-item:hover,
+          .quick-note-button:hover,
+          .quick-note-chip:hover {
+            transform: none;
+          }
+
+          .menu-item,
+          .cart-item,
+          .modal-button {
+            cursor: default;
+          }
+
+          .quantity-button,
           .remove-item {
-            background: none;
-            border: none;
-            color: var(--danger-color);
-            cursor: pointer;
-            transition: all 0.3s ease;
+            padding: 8px;
           }
-  
-          .remove-item:hover {
-            transform: scale(1.1);
-          }
-  
-          .cart-total {
-            display: flex;
-            justify-content: space-between;
-            font-weight: bold;
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 2px solid var(--border-color);
-          }
-  
-          .running-total {
-            margin-top: 1rem;
-            font-weight: bold;
-            color: var(--accent-color);
-          }
-  
         }
       `}</style>
     </div>
   )
 }
-
 export default BufBaristaPOS

@@ -4,24 +4,7 @@
   "siteUrl": "https://synergetic-studio.vercel.app/",
   "siteImage": "/share.png",
   "copyright": "All Rights Reserved. Powered by ",
-  "menu": [
-    {
-      "name": "Pos",
-      "link": "/pos"
-    },
-    {
-      "name": "Orders",
-      "link": "/orders"
-    },
-    {
-      "name": "Reports",
-      "link": "/reports"
-    },
-    {
-      "name": "Settings",
-      "link": "/settings"
-    }
-  ],
+  "menu": [],
 
   "announcement": " ",
   "warning": {

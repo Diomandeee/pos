@@ -14,7 +14,15 @@ import {
   Pie,
   Cell,
   ScatterChart,
-  Scatter
+  Scatter,
+  AreaChart,
+  Area,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  ComposedChart
 } from 'recharts'
 import {
   Download,
@@ -24,7 +32,13 @@ import {
   Clock,
   RefreshCw,
   AlertTriangle,
-  Loader
+  Loader,
+  Users,
+  ShoppingCart,
+  Percent,
+  Calendar,
+  Award,
+  TrendingDown
 } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import 'jspdf-autotable'
@@ -37,9 +51,14 @@ import {
   startOfMonth,
   endOfMonth,
   startOfYear,
-  endOfYear
+  endOfYear,
+  subDays,
+  eachDayOfInterval,
+  isSameDay
 } from 'date-fns'
-
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
+import Link from 'next/link'
 interface Order {
   id: number
   customerName: string
@@ -56,12 +75,13 @@ interface Order {
   preparationTime?: number
   queueTime: number
 }
-// Add this type declaration
+
 declare module 'jspdf' {
   interface jsPDF {
     autoTable: (options: unknown) => jsPDF
   }
 }
+
 type TimeRange = 'day' | 'week' | 'month' | 'year' | 'custom'
 
 const COLORS = [
@@ -77,8 +97,8 @@ const COLORS = [
 const Reports: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([])
   const [timeRange, setTimeRange] = useState<TimeRange>('week')
-  const [customStartDate, setCustomStartDate] = useState<string>('')
-  const [customEndDate, setCustomEndDate] = useState<string>('')
+  const [customStartDate, setCustomStartDate] = useState<Date | null>(null)
+  const [customEndDate, setCustomEndDate] = useState<Date | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedMetric, setSelectedMetric] = useState<'sales' | 'orders'>(
@@ -89,7 +109,6 @@ const Reports: React.FC = () => {
     setIsLoading(true)
     setError(null)
     try {
-      // Simulating an API call with a timeout
       await new Promise((resolve) => setTimeout(resolve, 500))
       const storedOrders = JSON.parse(
         localStorage.getItem('orders') || '[]'
@@ -119,8 +138,10 @@ const Reports: React.FC = () => {
         return { start: startOfYear(now), end: endOfYear(now) }
       case 'custom':
         return {
-          start: startOfDay(new Date(customStartDate)),
-          end: endOfDay(new Date(customEndDate))
+          start: customStartDate
+            ? startOfDay(customStartDate)
+            : startOfDay(now),
+          end: customEndDate ? endOfDay(customEndDate) : endOfDay(now)
         }
       default:
         return { start: startOfWeek(now), end: endOfWeek(now) }
@@ -136,7 +157,15 @@ const Reports: React.FC = () => {
   }, [orders, getDateRange])
 
   const salesData = useMemo(() => {
+    const { start, end } = getDateRange()
+    const days = eachDayOfInterval({ start, end })
     const data: { [key: string]: { sales: number; orders: number } } = {}
+
+    days.forEach((day) => {
+      const date = format(day, 'yyyy-MM-dd')
+      data[date] = { sales: 0, orders: 0 }
+    })
+
     filteredOrders.forEach((order) => {
       const date = format(new Date(order.timestamp), 'yyyy-MM-dd')
       if (!data[date]) {
@@ -152,7 +181,7 @@ const Reports: React.FC = () => {
         orders: values.orders
       }))
       .sort((a, b) => a.date.localeCompare(b.date))
-  }, [filteredOrders])
+  }, [filteredOrders, getDateRange])
 
   const topSellingItems = useMemo(() => {
     const itemCounts: { [key: string]: { quantity: number; revenue: number } } =
@@ -190,14 +219,23 @@ const Reports: React.FC = () => {
     const ordersWithPrepTime = filteredOrders.filter(
       (order) => order.preparationTime !== undefined
     )
-    return ordersWithPrepTime.length > 0
-      ? ordersWithPrepTime.reduce(
-          (sum, order) => sum + (order.preparationTime || 0),
-          0
-        ) / ordersWithPrepTime.length
-      : 0
+    if (ordersWithPrepTime.length === 0) {
+      return 0
+    }
+    return Math.round(
+      ordersWithPrepTime.reduce(
+        (sum, order) => sum + (order.preparationTime || 0),
+        0
+      ) / ordersWithPrepTime.length
+    )
   }, [filteredOrders])
 
+  // Add a helper function to format time in minutes:seconds
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
   const salesByCategory = useMemo(() => {
     const categorySales: { [key: string]: number } = {}
     filteredOrders.forEach((order) => {
@@ -233,8 +271,160 @@ const Reports: React.FC = () => {
       }))
   }, [filteredOrders])
 
+  const uniqueCustomers = useMemo(() => {
+    return new Set(filteredOrders.map((order) => order.customerName)).size
+  }, [filteredOrders])
+
+  const repeatCustomerRate = useMemo(() => {
+    const customerOrderCounts = filteredOrders.reduce((acc, order) => {
+      acc[order.customerName] = (acc[order.customerName] || 0) + 1
+      return acc
+    }, {} as { [key: string]: number })
+    const repeatCustomers = Object.values(customerOrderCounts).filter(
+      (count) => count > 1
+    ).length
+    return uniqueCustomers > 0 ? (repeatCustomers / uniqueCustomers) * 100 : 0
+  }, [filteredOrders, uniqueCustomers])
+
+  const averageItemsPerOrder = useMemo(() => {
+    const totalItems = filteredOrders.reduce(
+      (sum, order) =>
+        sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
+      0
+    )
+    return totalOrders > 0 ? totalItems / totalOrders : 0
+  }, [filteredOrders, totalOrders])
+
+  const salesTrend = useMemo(() => {
+    const { start, end } = getDateRange()
+    const days = eachDayOfInterval({ start, end })
+    const salesByDay: { [key: string]: number } = {}
+
+    days.forEach((day) => {
+      const date = format(day, 'yyyy-MM-dd')
+      salesByDay[date] = 0
+    })
+
+    filteredOrders.forEach((order) => {
+      const date = format(new Date(order.timestamp), 'yyyy-MM-dd')
+      salesByDay[date] += order.isComplimentary ? 0 : order.total
+    })
+
+    return Object.entries(salesByDay)
+      .map(([date, sales]) => ({ date, sales }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }, [filteredOrders, getDateRange])
+
+  const customerRetentionRate = useMemo(() => {
+    const { start } = getDateRange()
+    const previousPeriodStart = subDays(
+      start,
+      getDateRange().end.getTime() - start.getTime()
+    )
+
+    const currentCustomers = new Set(
+      filteredOrders.map((order) => order.customerName)
+    )
+    const previousCustomers = new Set(
+      orders
+        .filter((order) => {
+          const orderDate = new Date(order.timestamp)
+          return orderDate >= previousPeriodStart && orderDate < start
+        })
+        .map((order) => order.customerName)
+    )
+
+    const retainedCustomers = [...currentCustomers].filter((customer) =>
+      previousCustomers.has(customer)
+    ).length
+    return previousCustomers.size > 0
+      ? (retainedCustomers / previousCustomers.size) * 100
+      : 0
+  }, [filteredOrders, orders, getDateRange])
+
+  // New metrics
+  const peakHourSales = useMemo(() => {
+    const hourlyData = filteredOrders.reduce((acc, order) => {
+      const hour = new Date(order.timestamp).getHours()
+      acc[hour] = (acc[hour] || 0) + (order.isComplimentary ? 0 : order.total)
+      return acc
+    }, {} as { [key: number]: number })
+
+    if (Object.keys(hourlyData).length === 0) {
+      return { hour: 'N/A', sales: 0 }
+    }
+
+    const peakHour = Object.entries(hourlyData).reduce((a, b) =>
+      a[1] > b[1] ? a : b
+    )
+    return { hour: peakHour[0], sales: peakHour[1] }
+  }, [filteredOrders])
+  const salesGrowthRate = useMemo(() => {
+    const { start, end } = getDateRange()
+    const periodLength = end.getTime() - start.getTime()
+    const previousPeriodStart = new Date(start.getTime() - periodLength)
+
+    const currentPeriodSales = filteredOrders.reduce(
+      (sum, order) => sum + (order.isComplimentary ? 0 : order.total),
+      0
+    )
+    const previousPeriodSales = orders
+      .filter((order) => {
+        const orderDate = new Date(order.timestamp)
+        return orderDate >= previousPeriodStart && orderDate < start
+      })
+      .reduce(
+        (sum, order) => sum + (order.isComplimentary ? 0 : order.total),
+        0
+      )
+
+    return previousPeriodSales !== 0
+      ? ((currentPeriodSales - previousPeriodSales) / previousPeriodSales) * 100
+      : 100 // If previous period had no sales, consider it 100% growth
+  }, [filteredOrders, orders, getDateRange])
+
+  // New charts data
+  const categoryPerformance = useMemo(() => {
+    const categoryData: { [key: string]: { sales: number; orders: number } } =
+      {}
+    filteredOrders.forEach((order) => {
+      order.items.forEach((item) => {
+        if (!categoryData[item.category]) {
+          categoryData[item.category] = { sales: 0, orders: 0 }
+        }
+        categoryData[item.category].sales += item.price * item.quantity
+        categoryData[item.category].orders += item.quantity
+      })
+    })
+    return Object.entries(categoryData).map(([category, data]) => ({
+      category,
+      sales: data.sales,
+      orders: data.orders
+    }))
+  }, [filteredOrders])
+
+  const dailySalesAndOrders = useMemo(() => {
+    const { start, end } = getDateRange()
+    const days = eachDayOfInterval({ start, end })
+    const dailyData: {
+      [key: string]: { date: string; sales: number; orders: number }
+    } = {}
+
+    days.forEach((day) => {
+      const date = format(day, 'yyyy-MM-dd')
+      dailyData[date] = { date, sales: 0, orders: 0 }
+    })
+
+    filteredOrders.forEach((order) => {
+      const date = format(new Date(order.timestamp), 'yyyy-MM-dd')
+      dailyData[date].sales += order.isComplimentary ? 0 : order.total
+      dailyData[date].orders += 1
+    })
+
+    return Object.values(dailyData).sort((a, b) => a.date.localeCompare(b.date))
+  }, [filteredOrders, getDateRange])
+
   const generatePDF = useCallback(() => {
-    // eslint-disable-next-line new-cap
     const doc = new jsPDF()
     doc.setFontSize(18)
     doc.text('Buf Barista Sales Report', 14, 22)
@@ -250,6 +440,26 @@ const Reports: React.FC = () => {
     doc.text(`Total Sales: $${totalSales.toFixed(2)}`, 14, 38)
     doc.text(`Total Orders: ${totalOrders}`, 14, 46)
     doc.text(`Average Order Value: $${averageOrderValue.toFixed(2)}`, 14, 54)
+    doc.text(`Unique Customers: ${uniqueCustomers}`, 14, 62)
+    doc.text(`Repeat Customer Rate: ${repeatCustomerRate.toFixed(2)}%`, 14, 70)
+    doc.text(
+      `Customer Retention Rate: ${customerRetentionRate.toFixed(2)}%`,
+      14,
+      78
+    )
+    doc.text(
+      `Peak Hour Sales: Hour ${
+        peakHourSales.hour
+      }, $${peakHourSales.sales.toFixed(2)}`,
+      14,
+      86
+    )
+    doc.text(`Sales Growth Rate: ${salesGrowthRate.toFixed(2)}%`, 14, 94)
+    doc.text(
+      `Avg Preparation Time: ${formatTime(averagePreparationTime)}`,
+      14,
+      70
+    )
 
     const tableColumn = ['Date', 'Sales', 'Orders']
     const tableRows = salesData.map(({ date, sales, orders }) => [
@@ -259,13 +469,24 @@ const Reports: React.FC = () => {
     ])
 
     doc.autoTable({
-      startY: 70,
+      startY: 102,
       head: [tableColumn],
       body: tableRows
     })
 
     doc.save('buf-barista-sales-report.pdf')
-  }, [getDateRange, totalSales, totalOrders, averageOrderValue, salesData])
+  }, [
+    getDateRange,
+    totalSales,
+    totalOrders,
+    averageOrderValue,
+    salesData,
+    uniqueCustomers,
+    repeatCustomerRate,
+    customerRetentionRate,
+    peakHourSales,
+    salesGrowthRate
+  ])
 
   if (isLoading) {
     return (
@@ -306,17 +527,25 @@ const Reports: React.FC = () => {
         </select>
         {timeRange === 'custom' && (
           <div className="custom-date-range">
-            <input
-              type="date"
-              value={customStartDate}
-              onChange={(e) => setCustomStartDate(e.target.value)}
+            <DatePicker
+              selected={customStartDate}
+              onChange={(date) => setCustomStartDate(date)}
+              selectsStart
+              startDate={customStartDate}
+              endDate={customEndDate}
+              maxDate={new Date()}
+              placeholderText="Start Date"
               className="custom-date-input"
             />
-            <span>to</span>
-            <input
-              type="date"
-              value={customEndDate}
-              onChange={(e) => setCustomEndDate(e.target.value)}
+            <DatePicker
+              selected={customEndDate}
+              onChange={(date) => setCustomEndDate(date)}
+              selectsEnd
+              startDate={customStartDate}
+              endDate={customEndDate}
+              minDate={customStartDate}
+              maxDate={new Date()}
+              placeholderText="End Date"
               className="custom-date-input"
             />
           </div>
@@ -363,9 +592,63 @@ const Reports: React.FC = () => {
           </div>
           <div className="metric-content">
             <h3>Avg Preparation Time</h3>
+            <p className="metric-value">{formatTime(averagePreparationTime)}</p>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon">
+            <Users size={24} />
+          </div>
+          <div className="metric-content">
+            <h3>Unique Customers</h3>
+            <p className="metric-value">{uniqueCustomers}</p>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon">
+            <Percent size={24} />
+          </div>
+          <div className="metric-content">
+            <h3>Repeat Customer Rate</h3>
+            <p className="metric-value">{repeatCustomerRate.toFixed(2)}%</p>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon">
+            <ShoppingCart size={24} />
+          </div>
+          <div className="metric-content">
+            <h3>Avg Items Per Order</h3>
+            <p className="metric-value">{averageItemsPerOrder.toFixed(2)}</p>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon">
+            <Calendar size={24} />
+          </div>
+          <div className="metric-content">
+            <h3>Customer Retention Rate</h3>
+            <p className="metric-value">{customerRetentionRate.toFixed(2)}%</p>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon">
+            <Award size={24} />
+          </div>
+          <div className="metric-content">
+            <h3>Peak Hour Sales</h3>
             <p className="metric-value">
-              {averagePreparationTime.toFixed(2)} min
+              Hour {peakHourSales.hour}, ${peakHourSales.sales.toFixed(2)}
             </p>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon">
+            <TrendingUp size={24} />
+          </div>
+          <div className="metric-content">
+            <h3>Sales Growth Rate</h3>
+            <p className="metric-value">{salesGrowthRate.toFixed(2)}%</p>
           </div>
         </div>
       </div>
@@ -471,7 +754,7 @@ const Reports: React.FC = () => {
                 type="number"
                 dataKey="preparationTime"
                 name="Preparation Time"
-                unit="min"
+                tickFormatter={(value) => formatTime(value)}
               />
               <YAxis
                 type="number"
@@ -479,7 +762,14 @@ const Reports: React.FC = () => {
                 name="Order Value"
                 unit="$"
               />
-              <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+              <Tooltip
+                formatter={(value, name) => {
+                  if (name === 'preparationTime') {
+                    return [formatTime(value as number), name]
+                  }
+                  return [value, name]
+                }}
+              />
               <Scatter
                 name="Orders"
                 data={preparationTimeVsOrderValue}
@@ -488,9 +778,111 @@ const Reports: React.FC = () => {
             </ScatterChart>
           </ResponsiveContainer>
         </div>
+        <div className="chart-card">
+          <h3>Sales Trend</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={salesTrend}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Area
+                type="monotone"
+                dataKey="sales"
+                stroke="#8884d8"
+                fill="#8884d8"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="chart-card">
+          <h3>Category Performance</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <RadarChart
+              cx="50%"
+              cy="50%"
+              outerRadius="80%"
+              data={categoryPerformance}
+            >
+              <PolarGrid />
+              <PolarAngleAxis dataKey="category" />
+              <PolarRadiusAxis angle={30} domain={[0, 'auto']} />
+              <Radar
+                name="Sales"
+                dataKey="sales"
+                stroke="#8884d8"
+                fill="#8884d8"
+                fillOpacity={0.6}
+              />
+              <Radar
+                name="Orders"
+                dataKey="orders"
+                stroke="#82ca9d"
+                fill="#82ca9d"
+                fillOpacity={0.6}
+              />
+              <Legend />
+              <Tooltip />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="chart-card">
+          <h3>Daily Sales and Orders</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={dailySalesAndOrders}>
+              <CartesianGrid stroke="#f5f5f5" />
+              <XAxis dataKey="date" scale="band" />
+              <YAxis yAxisId="left" />
+              <YAxis yAxisId="right" orientation="right" />
+              <Tooltip />
+              <Legend />
+              <Bar
+                yAxisId="left"
+                dataKey="orders"
+                barSize={20}
+                fill="#413ea0"
+              />
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="sales"
+                stroke="#ff7300"
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       </div>
-
-      <style>{`
+      <div className="nav-buttons">
+        <Link href="/pos" passHref>
+          <button className="nav-button">Go to POS</button>
+        </Link>
+        <Link href="/orders" passHref>
+          <button className="nav-button">Go to Orders</button>
+        </Link>
+      </div>
+      <style jsx>{`
+        .nav-buttons {
+          display: flex;
+          justify-content: center;
+          gap: 10px;
+          margin-top: 20px;
+        }
+        .nav-button {
+          padding: 8px 16px;
+          border: none;
+          border-radius: 5px;
+          font-size: 14px;
+          font-weight: bold;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          text-decoration: none;
+          width: 100%;
+        }
         .reports-container {
           font-family: Arial, sans-serif;
           max-width: 1200px;
@@ -689,4 +1081,3 @@ const Reports: React.FC = () => {
 }
 
 export default Reports
-
