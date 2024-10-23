@@ -1,3 +1,4 @@
+// Core imports and setup - DO NOT MODIFY EXISTING IMPORTS
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Coffee,
@@ -10,7 +11,7 @@ import {
   Bell,
   Plus,
   Minus,
-  FileText,
+  Trash2,
   Star,
   Clock,
   CalendarDays
@@ -19,6 +20,35 @@ import Link from 'next/link'
 import Button from '@shared/atoms/Button'
 import { format } from 'date-fns'
 
+// Types
+interface MenuItem {
+  id: number
+  name: string
+  price: number
+  category: string
+  popular: boolean
+}
+
+interface MilkOption {
+  name: string
+  price: number
+}
+
+interface CartItem extends MenuItem {
+  quantity: number
+  flavor?: string
+  milk?: MilkOption
+}
+
+interface CustomerInfo {
+  firstName: string
+  lastInitial: string
+  organization: string
+  email: string
+  phone: string
+}
+
+// Constants
 const menuItems = [
   { id: 1, name: 'Espresso', price: 2.5, category: 'Coffee', popular: true },
   { id: 2, name: 'Americano', price: 3.0, category: 'Coffee', popular: false },
@@ -45,7 +75,6 @@ const menuItems = [
     category: 'Specialty',
     popular: false
   },
-
   {
     id: 12,
     name: 'Flat White',
@@ -65,10 +94,15 @@ const flavorOptions = [
   'Pumpkin Spice'
 ]
 
-const BufBaristaPOS = () => {
+const milkOptions: MilkOption[] = [
+  { name: 'Whole Milk', price: 0 },
+  { name: 'Oat Milk', price: 0 }
+]
+
+const BufBaristaPOS: React.FC = () => {
   // Basic state
-  const [cart, setCart] = useState([])
-  const [customerInfo, setCustomerInfo] = useState({
+  const [cart, setCart] = useState<CartItem[]>([])
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({
     firstName: '',
     lastInitial: '',
     organization: '',
@@ -79,19 +113,21 @@ const BufBaristaPOS = () => {
   const [orderNumber, setOrderNumber] = useState(1)
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [isComplimentaryMode, setIsComplimentaryMode] = useState(true)
-  const [queueStartTime, setQueueStartTime] = useState(null)
+  const [queueStartTime, setQueueStartTime] = useState<Date | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [runningTotal, setRunningTotal] = useState(0)
-  const [quickNotes, setQuickNotes] = useState([])
+  const [quickNotes, setQuickNotes] = useState<string[]>([])
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isFlavorModalOpen, setIsFlavorModalOpen] = useState(false)
+  const [isCustomizationModalOpen, setIsCustomizationModalOpen] =
+    useState(false)
   const [isQuickNoteModalOpen, setIsQuickNoteModalOpen] = useState(false)
-  const [notification, setNotification] = useState(null)
+  const [notification, setNotification] = useState<string | null>(null)
+  const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null)
   const [selectedFlavor, setSelectedFlavor] = useState('')
-  const [selectedCoffeeItem, setSelectedCoffeeItem] = useState(null)
+  const [selectedMilk, setSelectedMilk] = useState(milkOptions[0])
   const [showPopular, setShowPopular] = useState(false)
 
   // Load saved quick notes
@@ -143,93 +179,85 @@ const BufBaristaPOS = () => {
     )
   }, [isComplimentaryMode])
 
-  const showNotification = useCallback((message) => {
+  // Helper functions and callbacks
+  const showNotification = useCallback((message: string) => {
     setNotification(message)
     setTimeout(() => setNotification(null), 3000)
   }, [])
 
-  const addToCart = useCallback(
-    (item) => {
-      if (item.category === 'Coffee') {
-        setSelectedCoffeeItem(item)
-        setSelectedFlavor('')
-        setIsFlavorModalOpen(true)
-      } else {
-        setCart((prevCart) => {
-          const existingItem = prevCart.find(
-            (cartItem) => cartItem.id === item.id && cartItem.flavor === null
-          )
-          if (existingItem) {
-            return prevCart.map((cartItem) =>
-              cartItem.id === item.id && cartItem.flavor === null
-                ? { ...cartItem, quantity: cartItem.quantity + 1 }
-                : cartItem
-            )
-          } else {
-            return [...prevCart, { ...item, flavor: null, quantity: 1 }]
-          }
-        })
-        setRunningTotal((prevTotal) => prevTotal + item.price)
-        showNotification(`Added ${item.name} to cart`)
-      }
-    },
-    [showNotification]
-  )
+  const addToCart = useCallback((item: MenuItem) => {
+    setSelectedItem(item)
+    setSelectedFlavor('No Flavoring')
+    setSelectedMilk(milkOptions[0])
+    setIsCustomizationModalOpen(true)
+  }, [])
 
-  const confirmFlavorSelection = useCallback(() => {
-    if (selectedCoffeeItem) {
-      const flavoredCoffee = {
-        ...selectedCoffeeItem,
-        flavor: selectedFlavor === 'No Flavoring' ? null : selectedFlavor,
-        quantity: 1
-      }
-      setCart((prevCart) => {
-        const existingItem = prevCart.find(
-          (item) =>
-            item.id === flavoredCoffee.id &&
-            item.flavor === flavoredCoffee.flavor
-        )
-        if (existingItem) {
-          return prevCart.map((item) =>
-            item.id === flavoredCoffee.id &&
-            item.flavor === flavoredCoffee.flavor
-              ? { ...item, quantity: item.quantity + 1 }
-              : item
-          )
-        } else {
-          return [...prevCart, flavoredCoffee]
-        }
-      })
-      setRunningTotal((prevTotal) => prevTotal + selectedCoffeeItem.price)
-      showNotification(
-        `Added ${selectedCoffeeItem.name}${
-          selectedFlavor !== 'No Flavoring' ? ` with ${selectedFlavor}` : ''
-        } to cart`
-      )
-      setIsFlavorModalOpen(false)
+  const confirmCustomization = useCallback(() => {
+    if (!selectedItem) return
+
+    const newItem: CartItem = {
+      ...selectedItem,
+      flavor: selectedFlavor === 'No Flavoring' ? undefined : selectedFlavor,
+      milk: selectedMilk,
+      quantity: 1
     }
-  }, [selectedFlavor, selectedCoffeeItem, showNotification])
 
-  const removeFromCart = useCallback((index) => {
+    setCart((prevCart) => {
+      const existingItemIndex = prevCart.findIndex(
+        (item) =>
+          item.id === newItem.id &&
+          item.flavor === newItem.flavor &&
+          item.milk?.name === newItem.milk?.name
+      )
+
+      if (existingItemIndex !== -1) {
+        return prevCart.map((item, index) =>
+          index === existingItemIndex
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        )
+      }
+
+      return [...prevCart, newItem]
+    })
+
+    const itemTotal = selectedItem.price + selectedMilk.price
+    setRunningTotal((prev) => prev + itemTotal)
+
+    showNotification(
+      `Added ${selectedItem.name} with ${selectedMilk.name}${
+        selectedFlavor !== 'No Flavoring' ? ` and ${selectedFlavor}` : ''
+      } to cart`
+    )
+
+    setIsCustomizationModalOpen(false)
+  }, [selectedItem, selectedFlavor, selectedMilk, showNotification])
+
+  const removeFromCart = useCallback((index: number) => {
     setCart((prevCart) => {
       const newCart = [...prevCart]
       const item = newCart[index]
+      const itemTotal = item.price + (item.milk?.price || 0)
+
       if (item.quantity > 1) {
         newCart[index] = { ...item, quantity: item.quantity - 1 }
       } else {
         newCart.splice(index, 1)
       }
-      setRunningTotal((prevTotal) => prevTotal - item.price)
+
+      setRunningTotal((prev) => prev - itemTotal)
       return newCart
     })
   }, [])
 
-  const increaseQuantity = useCallback((index) => {
+  const increaseQuantity = useCallback((index: number) => {
     setCart((prevCart) => {
       const newCart = [...prevCart]
       const item = newCart[index]
+      const itemTotal = item.price + (item.milk?.price || 0)
+
       newCart[index] = { ...item, quantity: item.quantity + 1 }
-      setRunningTotal((prevTotal) => prevTotal + item.price)
+      setRunningTotal((prev) => prev + itemTotal)
       return newCart
     })
   }, [])
@@ -238,7 +266,11 @@ const BufBaristaPOS = () => {
     return isComplimentaryMode
       ? 0
       : cart
-          .reduce((sum, item) => sum + item.price * item.quantity, 0)
+          .reduce(
+            (sum, item) =>
+              sum + (item.price + (item.milk?.price || 0)) * item.quantity,
+            0
+          )
           .toFixed(2)
   }, [cart, isComplimentaryMode])
 
@@ -247,12 +279,12 @@ const BufBaristaPOS = () => {
     setIsModalOpen(true)
   }, [cart])
 
-  const addQuickNote = useCallback((note) => {
+  const addQuickNote = useCallback((note: string) => {
     setOrderNotes((prev) => (prev ? `${prev}\n${note}` : note))
   }, [])
 
   const saveQuickNote = useCallback(
-    (note) => {
+    (note: string) => {
       if (note && !quickNotes.includes(note)) {
         setQuickNotes((prev) => [...prev, note])
         showNotification('Quick note saved!')
@@ -323,7 +355,7 @@ const BufBaristaPOS = () => {
   )
 
   const handleKeyPress = useCallback(
-    (e) => {
+    (e: KeyboardEvent) => {
       if (e.key === 'Enter' && e.ctrlKey) {
         handlePlaceOrder()
       }
@@ -344,11 +376,16 @@ const BufBaristaPOS = () => {
       `Switched to ${isComplimentaryMode ? 'Pop-up' : 'Complimentary'} mode`
     )
   }, [isComplimentaryMode, showNotification])
-
   return (
     <div className={`pos-container ${isDarkMode ? 'dark-mode' : ''}`}>
       <header className="pos-header">
         <div className="header-left">
+          <Link href="/waste" passHref>
+            <button className="waste-button">
+              <Trash2 />
+              Waste
+            </button>
+          </Link>
           <button onClick={toggleServiceMode} className="mode-button">
             {isComplimentaryMode ? <Gift /> : <DollarSign />}
             {isComplimentaryMode ? 'Complimentary' : 'Pop-up'}
@@ -358,7 +395,7 @@ const BufBaristaPOS = () => {
             className={`mode-button ${showPopular ? 'active' : ''}`}
           >
             <Star />
-            Popular Items
+            Popular
           </button>
         </div>
 
@@ -403,8 +440,17 @@ const BufBaristaPOS = () => {
                 <li key={index} className="cart-item">
                   <span className="item-name">
                     {item.name}
+                    {item.milk && (
+                      <span className="item-customization">
+                        {' '}
+                        ({item.milk.name})
+                      </span>
+                    )}
                     {item.flavor && (
-                      <span className="item-flavor"> ({item.flavor})</span>
+                      <span className="item-customization">
+                        {' '}
+                        with {item.flavor}
+                      </span>
                     )}
                   </span>
                   <div className="item-controls">
@@ -424,7 +470,10 @@ const BufBaristaPOS = () => {
                     <span className="item-price">
                       {isComplimentaryMode
                         ? ''
-                        : `$${(item.price * item.quantity).toFixed(2)}`}
+                        : `$${(
+                            (item.price + (item.milk?.price || 0)) *
+                            item.quantity
+                          ).toFixed(2)}`}
                     </span>
                     <Button
                       onClick={() => removeFromCart(index)}
@@ -464,10 +513,6 @@ const BufBaristaPOS = () => {
             <span>Total:</span>
             <span>{isComplimentaryMode ? '' : `$${calculateTotal()}`}</span>
           </div>
-
-          {/* <div className="running-total">
-            Running Total: ${runningTotal.toFixed(2)}
-          </div> */}
 
           <button
             onClick={handlePlaceOrder}
@@ -521,6 +566,68 @@ const BufBaristaPOS = () => {
         </section>
       </main>
 
+      {/* Customization Modal */}
+      {isCustomizationModalOpen && selectedItem && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="modal-title">Customize {selectedItem.name}</h3>
+
+            <div className="customization-section">
+              <h4 className="section-subtitle">Select Milk</h4>
+              <div className="milk-options">
+                {milkOptions.map((milk) => (
+                  <button
+                    key={milk.name}
+                    onClick={() => setSelectedMilk(milk)}
+                    className={`milk-button ${
+                      selectedMilk.name === milk.name ? 'selected' : ''
+                    }`}
+                  >
+                    <span>{milk.name}</span>
+                    {milk.price > 0 && (
+                      <span className="milk-price">
+                        +${milk.price.toFixed(2)}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="customization-section">
+              <h4 className="section-subtitle">Select Flavor</h4>
+              {flavorOptions.map((flavor) => (
+                <button
+                  key={flavor}
+                  onClick={() => setSelectedFlavor(flavor)}
+                  className={`flavor-button ${
+                    selectedFlavor === flavor ? 'selected' : ''
+                  }`}
+                >
+                  {flavor}
+                </button>
+              ))}
+            </div>
+
+            <div className="modal-buttons">
+              <button
+                onClick={() => setIsCustomizationModalOpen(false)}
+                className="modal-button cancel"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmCustomization}
+                className="modal-button confirm"
+                disabled={!selectedFlavor}
+              >
+                Add to Cart
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Customer Information Modal */}
       {isModalOpen && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -597,40 +704,7 @@ const BufBaristaPOS = () => {
         </div>
       )}
 
-      {isFlavorModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h3 className="modal-title">Select Flavoring</h3>
-            {flavorOptions.map((flavor) => (
-              <button
-                key={flavor}
-                onClick={() => setSelectedFlavor(flavor)}
-                className={`flavor-button ${
-                  selectedFlavor === flavor ? 'selected' : ''
-                }`}
-              >
-                {flavor}
-              </button>
-            ))}
-            <div className="modal-buttons">
-              <button
-                onClick={() => setIsFlavorModalOpen(false)}
-                className="modal-button cancel"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmFlavorSelection}
-                className="modal-button confirm"
-                disabled={!selectedFlavor}
-              >
-                Add to Cart
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* Quick Note Modal */}
       {isQuickNoteModalOpen && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -644,13 +718,14 @@ const BufBaristaPOS = () => {
         </div>
       )}
 
+      {/* Notification */}
       {notification && (
         <div className="notification">
           <Bell size={16} />
           {notification}
         </div>
       )}
-      <style jsx>{`
+      <style>{`
         /* Base Variables */
         :root {
           --primary-color: #4a90e2;
@@ -712,6 +787,20 @@ const BufBaristaPOS = () => {
           cursor: pointer;
           transition: all 0.3s ease;
           background-color: var(--secondary-color);
+          color: white;
+        }
+
+        .waste-button {
+          display: flex;
+          align-items: center;
+          padding: 0.5rem 1rem;
+          border: none;
+          border-radius: 20px;
+          font-size: 14px;
+          font-weight: bold;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          background-color: var(--danger-color);
           color: white;
         }
 
@@ -1138,6 +1227,7 @@ const BufBaristaPOS = () => {
           justify-content: space-between;
           align-items: center;
           transition: all 0.3s ease;
+          margin-bottom: 5px;
         }
 
         .milk-button:hover,
@@ -1299,7 +1389,7 @@ const BufBaristaPOS = () => {
         }
 
         .dark-mode .quantity-button {
-          color: var(--secondary-color);
+          color: black;
         }
 
         .dark-mode .remove-item {

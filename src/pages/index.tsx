@@ -18,6 +18,7 @@ import {
   TrendingUp,
   AlertCircle,
   RefreshCw,
+  Settings,
   ChevronRight
 } from 'lucide-react'
 import Link from 'next/link'
@@ -333,6 +334,9 @@ const Dashboard: React.FC = () => {
           <Link href="/reports" className="action-button">
             <TrendingUp size={20} /> View Reports
           </Link>
+          <Link href="/settings" className="action-button">
+            <Settings size={20} /> View Settings
+          </Link>
         </div>
       </div>
 
@@ -572,6 +576,30 @@ const Dashboard: React.FC = () => {
           .action-button {
             width: 100%;
           }
+
+          .metrics-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        @media (max-width: 480px) {
+          .dashboard-controls {
+            flex-direction: column;
+            gap: 10px;
+          }
+
+          .time-range-select,
+          .refresh-button {
+            width: 100%;
+          }
+
+          .metrics-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .orders-table {
+            font-size: 14px;
+          }
         }
       `}</style>
     </div>
@@ -579,4 +607,3 @@ const Dashboard: React.FC = () => {
 }
 
 export default Dashboard
-

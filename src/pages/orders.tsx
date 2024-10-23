@@ -11,7 +11,6 @@ import {
   Trash2,
   Edit2,
   Save,
-  RefreshCw,
   Download,
   Upload,
   RefreshCcw,
@@ -576,10 +575,10 @@ const ActiveOrders: React.FC = () => {
           Save as PDF
         </button>
 
-        <button onClick={loadOrders} className="refresh-button">
+        {/* <button onClick={loadOrders} className="refresh-button">
           <RefreshCw size={16} />
           Refresh Orders
-        </button>
+        </button> */}
 
         <button onClick={clearAllOrders} className="clear-button">
           <Trash2 size={16} />
@@ -923,6 +922,14 @@ const ActiveOrders: React.FC = () => {
         </Link>
         <Link href="/reports" passHref>
           <button className="nav-button">Go to Reports</button>
+        </Link>
+        <Link href="/settings" passHref>
+          <button className="nav-button">Go to Settings</button>
+        </Link>
+        <Link href="/" passHref>
+          <button className="nav-button" style={{ backgroundColor: '' }}>
+            Go to Dashboard
+          </button>
         </Link>
       </div>
 

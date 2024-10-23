@@ -1,4 +1,21 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import Link from 'next/link'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
+import {
+  format,
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  startOfYear,
+  endOfYear,
+  subDays,
+  eachDayOfInterval,
+  isSameDay
+} from 'date-fns'
 import {
   BarChart,
   Bar,
@@ -38,27 +55,11 @@ import {
   Percent,
   Calendar,
   Award,
-  TrendingDown
+  TrendingDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus
 } from 'lucide-react'
-import { jsPDF } from 'jspdf'
-import 'jspdf-autotable'
-import {
-  format,
-  startOfDay,
-  endOfDay,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  startOfYear,
-  endOfYear,
-  subDays,
-  eachDayOfInterval,
-  isSameDay
-} from 'date-fns'
-import DatePicker from 'react-datepicker'
-import 'react-datepicker/dist/react-datepicker.css'
-import Link from 'next/link'
 interface Order {
   id: number
   customerName: string
@@ -93,6 +94,17 @@ const COLORS = [
   '#82ca9d',
   '#ffc658'
 ]
+
+interface TrendMetrics {
+  date: string
+  sales: number
+  orders: number
+  movingAverageSales: number
+  movingAverageOrders: number
+  salesGrowth: number
+  ordersGrowth: number
+  trend: 'up' | 'down' | 'stable'
+}
 
 const Reports: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([])
@@ -230,6 +242,50 @@ const Reports: React.FC = () => {
     )
   }, [filteredOrders])
 
+  const calculateMovingAverage = (data: number[], periods: number) => {
+    return data.map((_, index) => {
+      const start = Math.max(0, index - periods + 1)
+      const values = data.slice(start, index + 1)
+      return values.reduce((sum, val) => sum + val, 0) / values.length
+    })
+  }
+
+  const enhancedSalesTrend = useMemo((): TrendMetrics[] => {
+    const baseData = salesData.map((item) => ({
+      date: item.date,
+      sales: item.sales,
+      orders: item.orders
+    }))
+
+    const salesValues = baseData.map((item) => item.sales)
+    const ordersValues = baseData.map((item) => item.orders)
+
+    const movingAverageSales = calculateMovingAverage(salesValues, 7)
+    const movingAverageOrders = calculateMovingAverage(ordersValues, 7)
+
+    return baseData.map((item, index) => {
+      const previousSales = salesValues[index - 1] || salesValues[index]
+      const previousOrders = ordersValues[index - 1] || ordersValues[index]
+
+      const salesGrowth = ((item.sales - previousSales) / previousSales) * 100
+      const ordersGrowth =
+        ((item.orders - previousOrders) / previousOrders) * 100
+
+      const trend =
+        salesGrowth > 1 ? 'up' : salesGrowth < -1 ? 'down' : 'stable'
+
+      return {
+        date: item.date,
+        sales: item.sales,
+        orders: item.orders,
+        movingAverageSales: movingAverageSales[index],
+        movingAverageOrders: movingAverageOrders[index],
+        salesGrowth,
+        ordersGrowth,
+        trend
+      }
+    })
+  }, [salesData])
   // Add a helper function to format time in minutes:seconds
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
@@ -423,71 +479,127 @@ const Reports: React.FC = () => {
 
     return Object.values(dailyData).sort((a, b) => a.date.localeCompare(b.date))
   }, [filteredOrders, getDateRange])
+  const generateCSV = useCallback(() => {
+    // Prepare CSV headers
+    const headers = [
+      'Date',
+      'Total Sales ($)',
+      'Orders',
+      'Average Order Value ($)',
+      'Unique Customers',
+      'Preparation Time (min:sec)',
+      'Items Sold'
+    ]
 
-  const generatePDF = useCallback(() => {
-    const doc = new jsPDF()
-    doc.setFontSize(18)
-    doc.text('Buf Barista Sales Report', 14, 22)
-    doc.setFontSize(12)
-    doc.text(
-      `Report Period: ${format(getDateRange().start, 'yyyy-MM-dd')} to ${format(
-        getDateRange().end,
-        'yyyy-MM-dd'
-      )}`,
-      14,
-      30
-    )
-    doc.text(`Total Sales: $${totalSales.toFixed(2)}`, 14, 38)
-    doc.text(`Total Orders: ${totalOrders}`, 14, 46)
-    doc.text(`Average Order Value: $${averageOrderValue.toFixed(2)}`, 14, 54)
-    doc.text(`Unique Customers: ${uniqueCustomers}`, 14, 62)
-    doc.text(`Repeat Customer Rate: ${repeatCustomerRate.toFixed(2)}%`, 14, 70)
-    doc.text(
-      `Customer Retention Rate: ${customerRetentionRate.toFixed(2)}%`,
-      14,
-      78
-    )
-    doc.text(
-      `Peak Hour Sales: Hour ${
-        peakHourSales.hour
-      }, $${peakHourSales.sales.toFixed(2)}`,
-      14,
-      86
-    )
-    doc.text(`Sales Growth Rate: ${salesGrowthRate.toFixed(2)}%`, 14, 94)
-    doc.text(
-      `Avg Preparation Time: ${formatTime(averagePreparationTime)}`,
-      14,
-      70
-    )
+    // Prepare daily data
+    const csvData = dailySalesAndOrders.map((day) => {
+      const dayOrders = filteredOrders.filter((order) =>
+        isSameDay(new Date(order.timestamp), new Date(day.date))
+      )
 
-    const tableColumn = ['Date', 'Sales', 'Orders']
-    const tableRows = salesData.map(({ date, sales, orders }) => [
-      date,
-      `$${sales.toFixed(2)}`,
-      orders
-    ])
+      const dayUniqueCustomers = new Set(
+        dayOrders.map((order) => order.customerName)
+      ).size
 
-    doc.autoTable({
-      startY: 102,
-      head: [tableColumn],
-      body: tableRows
+      const dayAvgOrderValue = day.sales / (day.orders || 1)
+
+      const dayPrepTime = dayOrders
+        .filter((order) => order.preparationTime)
+        .reduce(
+          (avg, order, _, arr) =>
+            avg + (order.preparationTime || 0) / (arr.length || 1),
+          0
+        )
+
+      const dayItemsSold = dayOrders.reduce(
+        (sum, order) =>
+          sum +
+          order.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
+        0
+      )
+
+      return [
+        day.date,
+        day.sales.toFixed(2),
+        day.orders,
+        dayAvgOrderValue.toFixed(2),
+        dayUniqueCustomers,
+        formatTime(dayPrepTime),
+        dayItemsSold
+      ]
     })
 
-    doc.save('buf-barista-sales-report.pdf')
+    // Add summary data
+    const summaryData = [
+      ['Summary Statistics'],
+      ['Total Period Sales ($)', totalSales.toFixed(2)],
+      ['Total Orders', totalOrders],
+      ['Average Order Value ($)', averageOrderValue.toFixed(2)],
+      ['Unique Customers', uniqueCustomers],
+      ['Customer Retention Rate (%)', customerRetentionRate.toFixed(2)],
+      ['Average Preparation Time', formatTime(averagePreparationTime)],
+      ['Repeat Customer Rate (%)', repeatCustomerRate.toFixed(2)],
+      ['Sales Growth Rate (%)', salesGrowthRate.toFixed(2)],
+      [''],
+      ['Top Selling Items'],
+      ['Item Name', 'Quantity Sold', 'Revenue ($)'],
+      ...topSellingItems.map((item) => [
+        item.name,
+        item.quantity,
+        item.revenue.toFixed(2)
+      ]),
+      [''],
+      ['Sales by Category'],
+      ['Category', 'Total Sales ($)'],
+      ...salesByCategory.map((category) => [
+        category.name,
+        category.value.toFixed(2)
+      ])
+    ]
+
+    // Combine all data
+    const allRows = [
+      ['Daily Sales Report'],
+      [
+        `Report Period: ${format(
+          getDateRange().start,
+          'yyyy-MM-dd'
+        )} to ${format(getDateRange().end, 'yyyy-MM-dd')}`
+      ],
+      [''],
+      headers,
+      ...csvData,
+      [''],
+      ...summaryData
+    ]
+
+    // Convert to CSV string
+    const csvContent = allRows.map((row) => row.join(',')).join('\n')
+
+    // Create and trigger download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `sales-report-${format(new Date(), 'yyyy-MM-dd')}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }, [
-    getDateRange,
+    dailySalesAndOrders,
+    filteredOrders,
     totalSales,
     totalOrders,
     averageOrderValue,
-    salesData,
     uniqueCustomers,
-    repeatCustomerRate,
     customerRetentionRate,
-    peakHourSales,
-    salesGrowthRate
+    averagePreparationTime,
+    repeatCustomerRate,
+    salesGrowthRate,
+    topSellingItems,
+    salesByCategory,
+    getDateRange,
+    formatTime
   ])
-
   if (isLoading) {
     return (
       <div className="loading-container">
@@ -553,7 +665,7 @@ const Reports: React.FC = () => {
         <button onClick={fetchOrders} className="refresh-button">
           <RefreshCw size={16} /> Refresh Data
         </button>
-        <button onClick={generatePDF} className="download-button">
+        <button onClick={generateCSV} className="download-button">
           <Download size={16} /> Download Report
         </button>
       </div>
@@ -654,11 +766,11 @@ const Reports: React.FC = () => {
       </div>
 
       <div className="chart-grid">
-        <div className="chart-card">
-          <h3>Sales and Orders Trend</h3>
+        <div className="chart-card advanced">
+          <h3>Sales and Orders Trend Analysis</h3>
           <div className="chart-controls">
             <button
-              onClick={() => setSelectedMetric('sales')}
+              onClick={() => setSelectedMetric('orders')}
               className={`chart-control-button ${
                 selectedMetric === 'sales' ? 'active' : ''
               }`}
@@ -675,35 +787,98 @@ const Reports: React.FC = () => {
             </button>
           </div>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={salesData}>
+            <ComposedChart data={enhancedSalesTrend}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
+              <YAxis yAxisId="left" />
+              <YAxis yAxisId="right" orientation="right" />
+              <Tooltip
+                formatter={(value, name) => {
+                  if (typeof name === 'string' && name.includes('Growth')) {
+                    return [`${Number(value).toFixed(2)}%`, name]
+                  }
+                  return [value, name]
+                }}
+              />
               <Legend />
-              {selectedMetric === 'sales' && (
-                <Line type="monotone" dataKey="sales" stroke="#8884d8" />
+              {selectedMetric === 'sales' ? (
+                <>
+                  <Bar
+                    yAxisId="left"
+                    dataKey="sales"
+                    fill="#8884d8"
+                    name="Sales"
+                  />
+                  <Line
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey="movingAverageSales"
+                    stroke="#82ca9d"
+                    name="7-day Moving Average"
+                    dot={false}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="salesGrowth"
+                    stroke="#ff7300"
+                    name="Growth Rate %"
+                  />
+                </>
+              ) : (
+                <>
+                  <Bar
+                    yAxisId="left"
+                    dataKey="orders"
+                    fill="#82ca9d"
+                    name="Orders"
+                  />
+                  <Line
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey="movingAverageOrders"
+                    stroke="#8884d8"
+                    name="7-day Moving Average"
+                    dot={false}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="ordersGrowth"
+                    stroke="#ff7300"
+                    name="Growth Rate %"
+                  />
+                </>
               )}
-              {selectedMetric === 'orders' && (
-                <Line type="monotone" dataKey="orders" stroke="#82ca9d" />
-              )}
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
+          <div className="trend-indicators">
+            <div className="trend-summary">
+              <h4>Trend Analysis</h4>
+              <p>
+                7-day Moving Average:{' '}
+                {selectedMetric === 'sales'
+                  ? `$${enhancedSalesTrend[
+                      enhancedSalesTrend.length - 1
+                    ]?.movingAverageSales.toFixed(2)}`
+                  : enhancedSalesTrend[
+                      enhancedSalesTrend.length - 1
+                    ]?.movingAverageOrders.toFixed(1)}
+              </p>
+              <p>
+                Growth Rate:{' '}
+                {selectedMetric === 'sales'
+                  ? `${enhancedSalesTrend[
+                      enhancedSalesTrend.length - 1
+                    ]?.salesGrowth.toFixed(2)}%`
+                  : `${enhancedSalesTrend[
+                      enhancedSalesTrend.length - 1
+                    ]?.ordersGrowth.toFixed(2)}%`}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="chart-card">
-          <h3>Top Selling Items</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={topSellingItems} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" />
-              <YAxis dataKey="name" type="category" width={150} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="quantity" fill="#8884d8" name="Quantity" />
-              <Bar dataKey="revenue" fill="#82ca9d" name="Revenue ($)" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+
         <div className="chart-card">
           <h3>Sales by Category</h3>
           <ResponsiveContainer width="100%" height={300}>
@@ -730,6 +905,20 @@ const Reports: React.FC = () => {
               <Tooltip />
               <Legend />
             </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="chart-card">
+          <h3>Top Selling Items</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={topSellingItems} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis type="number" />
+              <YAxis dataKey="name" type="category" width={150} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="quantity" fill="#8884d8" name="Quantity" />
+              <Bar dataKey="revenue" fill="#82ca9d" name="Revenue ($)" />
+            </BarChart>
           </ResponsiveContainer>
         </div>
         <div className="chart-card">
@@ -861,7 +1050,7 @@ const Reports: React.FC = () => {
           <button className="nav-button">Go to Orders</button>
         </Link>
       </div>
-      <style jsx>{`
+      <style>{`
         .nav-buttons {
           display: flex;
           justify-content: center;
@@ -1050,6 +1239,37 @@ const Reports: React.FC = () => {
           100% {
             transform: rotate(360deg);
           }
+        }
+        .chart-card.advanced {
+          background-color: #fff;
+          border-radius: 8px;
+          padding: 20px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          margin-bottom: 20px;
+        }
+        
+        .trend-indicators {
+          margin-top: 15px;
+          padding-top: 15px;
+          border-top: 1px solid #eee;
+        }
+        
+        .trend-summary {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        
+        .trend-summary h4 {
+          margin: 0;
+          color: #333;
+          font-size: 16px;
+        }
+        
+        .trend-summary p {
+          margin: 0;
+          color: #666;
+          font-size: 14px;
         }
 
         .retry-button {
