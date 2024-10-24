@@ -6,10 +6,16 @@ import {
   Package,
   Save,
   AlertTriangle,
-  Download,
+  Minus,
   Search,
   X,
-  Check
+  Check,
+  Moon,
+  Sun,
+  DollarSign,
+  Star,
+  Clock,
+  CalendarDays
 } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
@@ -19,11 +25,9 @@ interface WasteItem {
   itemName: string
   category: string
   quantity: number
-  reason: string
   timestamp: string
   cost: number
   notes: string
-  reportedBy: string
 }
 
 interface WasteCategory {
@@ -36,6 +40,14 @@ interface WasteCategory {
 interface Message {
   type: 'success' | 'error'
   text: string
+}
+
+interface WasteLogItem {
+  itemName: string
+  category: string
+  quantity: number
+  cost: number
+  unit: string
 }
 
 const wasteCategories: WasteCategory[] = [
@@ -71,417 +83,303 @@ const wasteCategories: WasteCategory[] = [
   }
 ]
 
-const commonReasons = [
-  'Expired',
-  'Damaged',
-  'Customer Return',
-  'Made Incorrectly',
-  'Quality Issues',
-  'Spilled',
-  'Training'
-]
-
 const WasteManagement: React.FC = () => {
   const [wasteLog, setWasteLog] = useState<WasteItem[]>([])
-  const [filteredWaste, setFilteredWaste] = useState<WasteItem[]>([])
+  const [currentLog, setCurrentLog] = useState<WasteLogItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [searchTerm, setSearchTerm] = useState('')
-  const [dateRange, setDateRange] = useState({
-    start: format(new Date(), 'yyyy-MM-dd'),
-    end: format(new Date(), 'yyyy-MM-dd')
-  })
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isDarkMode, setIsDarkMode] = useState(false)
   const [message, setMessage] = useState<Message | null>(null)
+  const [notes, setNotes] = useState('')
 
-  const [formData, setFormData] = useState<Partial<WasteItem>>({
-    itemName: '',
-    category: wasteCategories[0].name,
-    quantity: 1,
-    reason: '',
-    notes: '',
-    reportedBy: ''
-  })
-
+  // Load initial data
   useEffect(() => {
     const savedWasteLog = localStorage.getItem('wasteLog')
     if (savedWasteLog) {
       setWasteLog(JSON.parse(savedWasteLog))
     }
+
+    const savedDarkMode = localStorage.getItem('wasteDarkMode')
+    if (savedDarkMode) {
+      setIsDarkMode(JSON.parse(savedDarkMode))
+    }
   }, [])
 
+  // Handle dark mode
+  useEffect(() => {
+    localStorage.setItem('wasteDarkMode', JSON.stringify(isDarkMode))
+    document.body.classList.toggle('dark-mode', isDarkMode)
+  }, [isDarkMode])
+
+  // Save waste log
   const saveWasteLog = useCallback((newLog: WasteItem[]) => {
     localStorage.setItem('wasteLog', JSON.stringify(newLog))
     setWasteLog(newLog)
   }, [])
 
-  useEffect(() => {
-    let filtered = [...wasteLog]
-
-    if (selectedCategory !== 'All') {
-      filtered = filtered.filter((item) => item.category === selectedCategory)
+  // Filter categories
+  const filteredCategories = useMemo(() => {
+    if (selectedCategory === 'All') {
+      return wasteCategories
     }
-
-    if (searchTerm) {
-      const search = searchTerm.toLowerCase()
-      filtered = filtered.filter(
-        (item) =>
-          item.itemName.toLowerCase().includes(search) ||
-          item.reason.toLowerCase().includes(search) ||
-          item.notes.toLowerCase().includes(search)
-      )
-    }
-
-    const startDate = new Date(dateRange.start)
-    const endDate = new Date(dateRange.end)
-    endDate.setHours(23, 59, 59)
-
-    filtered = filtered.filter((item) => {
-      const itemDate = new Date(item.timestamp)
-      return itemDate >= startDate && itemDate <= endDate
-    })
-
-    setFilteredWaste(filtered)
-  }, [wasteLog, selectedCategory, searchTerm, dateRange])
-
-  const stats = useMemo(() => {
-    const totalItems = filteredWaste.reduce(
-      (sum, item) => sum + item.quantity,
-      0
+    return wasteCategories.filter(
+      (category) => category.name === selectedCategory
     )
+  }, [selectedCategory])
 
-    const totalCost = filteredWaste.reduce((sum, item) => sum + item.cost, 0)
+  // Add item to current log
+  const addToLog = useCallback((item: string, category: WasteCategory) => {
+    setCurrentLog((prev) => {
+      const existingItem = prev.find(
+        (logItem) =>
+          logItem.itemName === item && logItem.category === category.name
+      )
 
-    const categoryBreakdown = filteredWaste.reduce((acc, item) => {
-      acc[item.category] = (acc[item.category] || 0) + item.quantity
-      return acc
-    }, {} as Record<string, number>)
+      if (existingItem) {
+        return prev.map((logItem) =>
+          logItem.itemName === item && logItem.category === category.name
+            ? { ...logItem, quantity: logItem.quantity + 1 }
+            : logItem
+        )
+      }
 
-    const topReasons = filteredWaste.reduce((acc, item) => {
-      acc[item.reason] = (acc[item.reason] || 0) + 1
-      return acc
-    }, {} as Record<string, number>)
+      return [
+        ...prev,
+        {
+          itemName: item,
+          category: category.name,
+          quantity: 1,
+          cost: category.averageCost,
+          unit: category.unit
+        }
+      ]
+    })
+  }, [])
+  // Remove item from log
+  const removeFromLog = useCallback((index: number) => {
+    setCurrentLog((prev) => {
+      const newLog = [...prev]
+      const item = newLog[index]
 
-    return {
-      totalItems,
-      totalCost,
-      categoryBreakdown,
-      topReasons: Object.entries(topReasons)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 3)
-    }
-  }, [filteredWaste])
+      if (item.quantity > 1) {
+        newLog[index] = { ...item, quantity: item.quantity - 1 }
+        return newLog
+      }
 
-  const showMessage = (text: string, type: 'success' | 'error') => {
+      return prev.filter((_, i) => i !== index)
+    })
+  }, [])
+
+  // Increase item quantity
+  const increaseQuantity = useCallback((index: number) => {
+    setCurrentLog((prev) => {
+      const newLog = [...prev]
+      const item = newLog[index]
+      newLog[index] = { ...item, quantity: item.quantity + 1 }
+      return newLog
+    })
+  }, [])
+
+  // Show notification message
+  const showMessage = useCallback((text: string, type: 'success' | 'error') => {
     setMessage({ text, type })
     setTimeout(() => setMessage(null), 3000)
-  }
+  }, [])
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  // Calculate total cost
+  const calculateTotalCost = useMemo(() => {
+    return currentLog.reduce((sum, item) => sum + item.cost * item.quantity, 0)
+  }, [currentLog])
 
-    if (!formData.itemName || !formData.category || !formData.reason) {
-      showMessage('Please fill in all required fields', 'error')
+  // Handle log submission
+  const handleLogSubmit = useCallback(() => {
+    if (currentLog.length === 0) {
+      showMessage('Please add items to log', 'error')
       return
     }
 
-    const category = wasteCategories.find(
-      (cat) => cat.name === formData.category
-    )
+    const timestamp = new Date().toISOString()
+    const newWasteItems: WasteItem[] = currentLog.map((item) => ({
+      id: `${Date.now()}-${Math.random()}`,
+      itemName: item.itemName,
+      category: item.category,
+      quantity: item.quantity,
+      timestamp,
+      cost: item.cost * item.quantity,
+      notes
+    }))
 
-    const newItem: WasteItem = {
-      id: Date.now().toString(),
-      itemName: formData.itemName,
-      category: formData.category || '',
-      quantity: formData.quantity || 1,
-      reason: formData.reason,
-      timestamp: new Date().toISOString(),
-      cost: (category?.averageCost || 0) * (formData.quantity || 1),
-      notes: formData.notes || '',
-      reportedBy: formData.reportedBy || ''
-    }
-
-    const updatedLog = [newItem, ...wasteLog]
+    const updatedLog = [...newWasteItems, ...wasteLog]
     saveWasteLog(updatedLog)
-    setIsModalOpen(false)
-    showMessage('Waste item logged successfully', 'success')
 
-    setFormData({
-      itemName: '',
-      category: wasteCategories[0].name,
-      quantity: 1,
-      reason: '',
-      notes: '',
-      reportedBy: ''
-    })
-  }
-
-  const handleExport = () => {
-    const dataStr = JSON.stringify(wasteLog, null, 2)
-    const dataUri =
-      'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr)
-    const exportFileDefaultName = `waste-log-${format(
-      new Date(),
-      'yyyy-MM-dd'
-    )}.json`
-
-    const linkElement = document.createElement('a')
-    linkElement.setAttribute('href', dataUri)
-    linkElement.setAttribute('download', exportFileDefaultName)
-    linkElement.click()
-
-    showMessage('Waste log exported successfully', 'success')
-  }
+    setCurrentLog([])
+    setNotes('')
+    showMessage('Waste items logged successfully', 'success')
+  }, [currentLog, notes, wasteLog, saveWasteLog, showMessage])
 
   return (
-    <div className="waste-container">
-      <header className="header">
-        <h1 className="page-title">Waste Management</h1>
-        <div className="header-actions">
-          <button onClick={() => setIsModalOpen(true)} className="add-button">
-            <Plus size={16} /> Log Waste
-          </button>
-          <button onClick={handleExport} className="export-button">
-            <Download size={16} /> Export Log
+    <div className={`waste-container ${isDarkMode ? 'dark-mode' : ''}`}>
+      <header className="waste-header">
+        <div className="header-left">
+          <h1 className="page-title">Waste Management</h1>
+          <button className="mode-button">
+            <Trash2 size={16} /> Total Cost: ${calculateTotalCost.toFixed(2)}
           </button>
         </div>
-      </header>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon">
-            <Trash2 size={24} />
-          </div>
-          <div className="stat-content">
-            <h3>Total Items Wasted</h3>
-            <p className="stat-value">{stats.totalItems}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">
-            <Package size={24} />
-          </div>
-          <div className="stat-content">
-            <h3>Total Cost</h3>
-            <p className="stat-value">${stats.totalCost.toFixed(2)}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="filters">
         <div className="search-container">
           <Search size={16} />
           <input
             type="text"
-            placeholder="Search waste log..."
+            placeholder="Search waste items..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
           />
         </div>
 
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className="category-select"
-        >
-          <option value="All">All Categories</option>
-          {wasteCategories.map((category) => (
-            <option key={category.name} value={category.name}>
-              {category.name}
-            </option>
-          ))}
-        </select>
-
-        <div className="date-range">
-          <input
-            type="date"
-            value={dateRange.start}
-            onChange={(e) =>
-              setDateRange((prev) => ({
-                ...prev,
-                start: e.target.value
-              }))
-            }
-            className="date-input"
-          />
-          <span>to</span>
-          <input
-            type="date"
-            value={dateRange.end}
-            onChange={(e) =>
-              setDateRange((prev) => ({
-                ...prev,
-                end: e.target.value
-              }))
-            }
-            className="date-input"
-          />
+        <div className="header-right">
+          <span className="current-time">
+            <Clock size={16} />
+            {format(new Date(), 'HH:mm')}
+          </span>
+          <span className="current-date">
+            <CalendarDays size={16} />
+            {format(new Date(), 'MMM dd, yyyy')}
+          </span>
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="mode-button"
+          >
+            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
         </div>
-      </div>
+      </header>
 
-      <div className="waste-table-container">
-        <table className="waste-table">
-          <thead>
-            <tr>
-              <th>Date/Time</th>
-              <th>Item</th>
-              <th>Category</th>
-              <th>Quantity</th>
-              <th>Reason</th>
-              <th>Cost</th>
-              <th>Reported By</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredWaste.map((item) => (
-              <tr key={item.id}>
-                <td>{format(new Date(item.timestamp), 'MM/dd/yyyy HH:mm')}</td>
-                <td>{item.itemName}</td>
-                <td>{item.category}</td>
-                <td>{item.quantity}</td>
-                <td>{item.reason}</td>
-                <td>${item.cost.toFixed(2)}</td>
-                <td>{item.reportedBy}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <main className="waste-main">
+        <section className="waste-log-section">
+          <h2 className="section-title">Current Waste Log</h2>
 
-      {isModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h2>Log Waste Item</h2>
-            <form onSubmit={handleSubmit}>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Category*</label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        category: e.target.value,
-                        itemName: ''
-                      })
-                    }
-                    required
-                  >
-                    {wasteCategories.map((category) => (
-                      <option key={category.name} value={category.name}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+          {!currentLog || currentLog.length === 0 ? (
+            <p className="empty-log">No items added to waste log</p>
+          ) : (
+            <ul className="waste-items">
+              {currentLog.map((item, index) => (
+                <li key={index} className="waste-item">
+                  <span className="item-name">
+                    {item.itemName}
+                    <span className="item-category">({item.category})</span>
+                  </span>
+                  <div className="item-controls">
+                    <button
+                      onClick={() => removeFromLog(index)}
+                      className="quantity-button"
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="item-quantity">
+                      {item.quantity} {item.unit}
+                    </span>
+                    <button
+                      onClick={() => increaseQuantity(index)}
+                      className="quantity-button"
+                    >
+                      <Plus size={16} />
+                    </button>
+                    <span className="item-cost">
+                      ${(item.cost * item.quantity).toFixed(2)}
+                    </span>
+                    <button
+                      onClick={() => removeFromLog(index)}
+                      className="remove-button"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
 
-                <div className="form-group">
-                  <label>Item*</label>
-                  <select
-                    value={formData.itemName}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        itemName: e.target.value
-                      })
-                    }
-                    required
-                  >
-                    <option value="">Select Item</option>
-                    {wasteCategories
-                      .find((cat) => cat.name === formData.category)
-                      ?.items.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Quantity*</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={formData.quantity || 1}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        quantity: parseInt(e.target.value)
-                      })
-                    }
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Reason*</label>
-                  <select
-                    value={formData.reason}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        reason: e.target.value
-                      })
-                    }
-                    required
-                  >
-                    <option value="">Select Reason</option>
-                    {commonReasons.map((reason) => (
-                      <option key={reason} value={reason}>
-                        {reason}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Reported By</label>
-                  <input
-                    type="text"
-                    value={formData.reportedBy || ''}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        reportedBy: e.target.value
-                      })
-                    }
-                    placeholder="Your name"
-                  />
-                </div>
-
-                <div className="form-group full-width">
-                  <label>Notes</label>
-                  <textarea
-                    value={formData.notes || ''}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        notes: e.target.value
-                      })
-                    }
-                    placeholder="Additional notes..."
-                    rows={3}
-                  />
-                </div>
-              </div>
-
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="cancel-button"
-                >
-                  <X size={16} /> Cancel
-                </button>
-                <button type="submit" className="save-button">
-                  <Save size={16} /> Log Waste
-                </button>
-              </div>
-            </form>
+          <div className="log-details">
+            <div className="form-group">
+              <label>Additional Notes</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Add any additional notes..."
+                className="form-textarea"
+                rows={3}
+              />
+            </div>
           </div>
-        </div>
-      )}
+
+          <div className="log-total">
+            <span>Total Cost:</span>
+            <span>${calculateTotalCost.toFixed(2)}</span>
+          </div>
+
+          <button
+            onClick={handleLogSubmit}
+            disabled={!currentLog || currentLog.length === 0}
+            className="submit-log-button"
+          >
+            <Save size={16} /> Submit Waste Log
+          </button>
+
+          <Link href="/log" passHref>
+            <button className="nav-button">
+              <Coffee size={16} /> View Waste Log History
+            </button>
+          </Link>
+
+          <Link href="/pos" passHref>
+            <button className="nav-button">
+              <Coffee size={16} /> Return to POS
+            </button>
+          </Link>
+        </section>
+        <section className="waste-menu-section">
+          <div className="category-filters">
+            {['All', ...wasteCategories.map((cat) => cat.name)].map(
+              (category) => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`category-button ${
+                    category === selectedCategory ? 'active' : ''
+                  }`}
+                >
+                  {category}
+                </button>
+              )
+            )}
+          </div>
+
+          <div className="menu-grid">
+            {filteredCategories.map((category) => (
+              <div key={category.name} className="category-section">
+                <h3 className="category-title">{category.name}</h3>
+                <div className="items-grid">
+                  {category.items.map((item) => (
+                    <button
+                      key={item}
+                      onClick={() => addToLog(item, category)}
+                      className="waste-menu-item"
+                    >
+                      <Package className="item-icon" />
+                      <h3 className="item-name">{item}</h3>
+                      <p className="item-details">
+                        ${category.averageCost.toFixed(2)} per {category.unit}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
 
       {message && (
         <div className={`notification ${message.type}`}>
@@ -494,26 +392,31 @@ const WasteManagement: React.FC = () => {
         </div>
       )}
 
-      <div className="quick-actions">
-        <Link href="/pos" className="action-button">
-          <Coffee size={20} /> Go to POS
-        </Link>
-      </div>
-
-      <style>
-        {`
+      <style>{`
         .waste-container {
           max-width: 1200px;
           margin: 0 auto;
           padding: 20px;
-          background-color: #f8f9fa;
+          background-color: var(--background-color);
+          min-height: 100vh;
         }
 
-        .header {
+        .waste-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
           margin-bottom: 20px;
+          padding: 15px;
+          background-color: white;
+          border-radius: 8px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-left,
+        .header-right {
+          display: flex;
+          align-items: center;
+          gap: 10px;
         }
 
         .page-title {
@@ -522,99 +425,42 @@ const WasteManagement: React.FC = () => {
           margin: 0;
         }
 
-        .header-actions {
+        .current-time,
+        .current-date {
           display: flex;
-          gap: 10px;
+          align-items: center;
+          gap: 0.5rem;
+          color: #495057;
+          font-size: 14px;
         }
 
-        .add-button,
-        .export-button {
+        .mode-button {
           display: flex;
           align-items: center;
           gap: 5px;
           padding: 8px 16px;
           border: none;
-          border-radius: 4px;
+          border-radius: 20px;
           font-size: 14px;
           cursor: pointer;
-          transition: background-color 0.3s ease;
+          background-color: #4a90e2;
           color: white;
+          transition: background-color 0.3s ease;
         }
 
-        .add-button {
-          background-color: #28a745;
-        }
-
-        .add-button:hover {
-          background-color: #218838;
-        }
-
-        .export-button {
-          background-color: #17a2b8;
-        }
-
-        .export-button:hover {
-          background-color: #138496;
-        }
-
-        .stats-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 20px;
-          margin-bottom: 20px;
-        }
-
-        .stat-card {
-          background-color: white;
-          border-radius: 8px;
-          padding: 20px;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-          display: flex;
-          align-items: center;
-        }
-
-        .stat-icon {
-          background-color: #e9ecef;
-          border-radius: 50%;
-          width: 50px;
-          height: 50px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-right: 15px;
-        }
-
-        .stat-content h3 {
-          font-size: 14px;
-          color: #6c757d;
-          margin: 0 0 5px 0;
-        }
-
-        .stat-value {
-          font-size: 24px;
-          font-weight: bold;
-          color: #4a90e2;
-          margin: 0;
-        }
-
-        .filters {
-          display: flex;
-          gap: 15px;
-          margin-bottom: 20px;
-          align-items: center;
-          flex-wrap: wrap;
+        .mode-button:hover {
+          background-color: #357abd;
         }
 
         .search-container {
           display: flex;
           align-items: center;
           gap: 8px;
-          flex: 1;
-          background-color: white;
           padding: 8px 12px;
-          border-radius: 4px;
           border: 1px solid #ddd;
-          min-width: 200px;
+          border-radius: 6px;
+          background-color: white;
+          width: 300px;
         }
 
         .search-input {
@@ -624,157 +470,251 @@ const WasteManagement: React.FC = () => {
           font-size: 14px;
         }
 
-        .category-select {
-          padding: 8px 12px;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          font-size: 14px;
-          min-width: 150px;
+        .waste-main {
+          display: grid;
+          grid-template-columns: 1fr 2fr;
+          gap: 20px;
         }
 
-        .date-range {
+        .waste-log-section {
+          background-color: white;
+          border-radius: 8px;
+          padding: 20px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .section-title {
+          font-size: 20px;
+          color: #4a90e2;
+          margin-bottom: 20px;
+          padding-bottom: 10px;
+          border-bottom: 2px solid #f0f0f0;
+        }
+
+        .empty-log {
+          text-align: center;
+          color: #666;
+          font-style: italic;
+          margin: 20px 0;
+        }
+
+        .waste-items {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+        }
+
+        .waste-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 10px 0;
+          border-bottom: 1px solid #f0f0f0;
+        }
+
+        .item-controls {
           display: flex;
           align-items: center;
           gap: 8px;
         }
 
-        .date-input {
-          padding: 8px;
-          border: 1px solid #ddd;
+        .quantity-button {
+          background: none;
+          border: none;
+          color: #4a90e2;
+          cursor: pointer;
+          padding: 4px;
           border-radius: 4px;
-          font-size: 14px;
-        }
-
-        .waste-table-container {
-          background-color: white;
-          border-radius: 8px;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-          overflow-x: auto;
-          margin-bottom: 20px;
-        }
-
-        .waste-table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-
-        .waste-table th {
-          background-color: #f8f9fa;
-          padding: 12px;
-          text-align: left;
-          font-weight: bold;
-          color: #495057;
-          border-bottom: 2px solid #dee2e6;
-        }
-
-        .waste-table td {
-          padding: 12px;
-          border-bottom: 1px solid #dee2e6;
-        }
-
-        .waste-table tr:hover {
-          background-color: #f8f9fa;
-        }
-
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: rgba(0, 0, 0, 0.5);
           display: flex;
-          justify-content: center;
           align-items: center;
-          z-index: 1000;
+          justify-content: center;
         }
 
-        .modal-content {
-          background-color: white;
-          padding: 24px;
+        .remove-button {
+          background: none;
+          border: none;
+          color: #dc3545;
+          cursor: pointer;
+          padding: 4px;
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .item-quantity {
+          font-weight: bold;
+          min-width: 60px;
+          text-align: center;
+        }
+
+        .item-category {
+          font-size: 12px;
+          color: #666;
+          margin-left: 5px;
+        }
+
+        .log-details {
+          margin-top: 20px;
+          padding: 15px;
+          background-color: #f8f9fa;
           border-radius: 8px;
-          max-width: 600px;
-          width: 90%;
-          max-height: 90vh;
-          overflow-y: auto;
-        }
-
-        .modal-content h2 {
-          margin-top: 0;
-          margin-bottom: 20px;
-          color: #495057;
-        }
-
-        .form-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 15px;
-          margin-bottom: 20px;
         }
 
         .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
-
-        .form-group.full-width {
-          grid-column: 1 / -1;
+          margin-bottom: 15px;
         }
 
         .form-group label {
+          display: block;
+          margin-bottom: 5px;
           font-size: 14px;
           color: #495057;
         }
 
-        .form-group input,
-        .form-group select,
-        .form-group textarea {
+        .form-textarea {
+          width: 100%;
           padding: 8px;
           border: 1px solid #ddd;
           border-radius: 4px;
           font-size: 14px;
-        }
-
-        .form-group textarea {
           resize: vertical;
           min-height: 80px;
+          font-family: inherit;
         }
 
-        .modal-actions {
+        .log-total {
           display: flex;
-          justify-content: flex-end;
-          gap: 10px;
+          justify-content: space-between;
+          font-weight: bold;
+          margin: 20px 0;
+          padding: 15px;
+          background-color: #f8f9fa;
+          border-radius: 8px;
         }
-
-        .cancel-button,
-        .save-button {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          padding: 8px 16px;
+        .submit-log-button,
+        .nav-button {
+          width: 100%;
+          padding: 12px;
+          margin-top: 10px;
           border: none;
           border-radius: 4px;
-          font-size: 14px;
+          font-size: 16px;
+          font-weight: bold;
           cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
           transition: background-color 0.3s ease;
+        }
+
+        .submit-log-button {
+          background-color: #28a745;
           color: white;
         }
 
-        .cancel-button {
-          background-color: #6c757d;
-        }
-
-        .cancel-button:hover {
-          background-color: #5a6268;
-        }
-
-        .save-button {
-          background-color: #28a745;
-        }
-
-        .save-button:hover {
+        .submit-log-button:hover {
           background-color: #218838;
+        }
+
+        .submit-log-button:disabled {
+          background-color: #ccc;
+          cursor: not-allowed;
+        }
+
+        .nav-button {
+          background-color: #4a90e2;
+          color: white;
+          text-decoration: none;
+        }
+
+        .nav-button:hover {
+          background-color: #357abd;
+        }
+
+        .waste-menu-section {
+          background-color: white;
+          border-radius: 8px;
+          padding: 20px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .category-filters {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-bottom: 20px;
+        }
+
+        .category-button {
+          padding: 8px 16px;
+          border: none;
+          border-radius: 20px;
+          background-color: #f0f0f0;
+          color: #495057;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .category-button:hover {
+          background-color: #e2e6ea;
+        }
+
+        .category-button.active {
+          background-color: #4a90e2;
+          color: white;
+        }
+
+        .category-section {
+          margin-bottom: 30px;
+        }
+
+        .category-title {
+          font-size: 18px;
+          color: #495057;
+          margin-bottom: 15px;
+        }
+
+        .items-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+          gap: 15px;
+        }
+
+        .waste-menu-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 15px;
+          border: 1px solid #ddd;
+          border-radius: 8px;
+          background-color: white;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .waste-menu-item:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .item-icon {
+          color: #4a90e2;
+          margin-bottom: 10px;
+        }
+
+        .item-name {
+          font-size: 14px;
+          font-weight: bold;
+          text-align: center;
+          margin: 0;
+        }
+
+        .item-details {
+          font-size: 12px;
+          color: #666;
+          margin: 5px 0 0;
         }
 
         .notification {
@@ -785,7 +725,7 @@ const WasteManagement: React.FC = () => {
           border-radius: 4px;
           display: flex;
           align-items: center;
-          gap: gap: 10px;
+          gap: 10px;
           color: white;
           animation: slideIn 0.3s ease-out;
           z-index: 1000;
@@ -799,28 +739,6 @@ const WasteManagement: React.FC = () => {
           background-color: #dc3545;
         }
 
-        .quick-actions {
-          margin-top: 20px;
-          display: flex;
-          gap: 10px;
-        }
-
-        .action-button {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          padding: 10px 20px;
-          background-color: #4a90e2;
-          color: white;
-          text-decoration: none;
-          border-radius: 4px;
-          transition: background-color 0.3s ease;
-        }
-
-        .action-button:hover {
-          background-color: #357abd;
-        }
-
         @keyframes slideIn {
           from {
             transform: translateY(100%);
@@ -832,71 +750,166 @@ const WasteManagement: React.FC = () => {
           }
         }
 
+        .dark-mode {
+          --background-color: #1a1a1a;
+          --text-color: #f0f0f0;
+          --border-color: #444;
+        }
+
+        .dark-mode .waste-container {
+          background-color: var(--background-color);
+          color: var(--text-color);
+        }
+
+        .dark-mode .waste-header,
+        .dark-mode .waste-log-section,
+        .dark-mode .waste-menu-section,
+        .dark-mode .waste-menu-item {
+          background-color: #2c2c2c;
+          border-color: var(--border-color);
+        }
+
+        .dark-mode .search-container {
+          background-color: #3c3c3c;
+          border-color: #444;
+        }
+
+        .dark-mode .search-input {
+          background-color: #3c3c3c;
+          color: var(--text-color);
+        }
+
+        .dark-mode .category-button {
+          background-color: #3c3c3c;
+          color: var(--text-color);
+        }
+
+        .dark-mode .category-button.active {
+          background-color: #4a90e2;
+          color: white;
+        }
+
+        .dark-mode .log-details {
+          background-color: #3c3c3c;
+        }
+
+        .dark-mode .form-textarea {
+          background-color: #2c2c2c;
+          border-color: #444;
+          color: var(--text-color);
+        }
+
+        .dark-mode .item-category {
+          color: #aaa;
+        }
+
+        .dark-mode .item-details {
+          color: #aaa;
+        }
+
+        .dark-mode .waste-item {
+          border-color: #444;
+        }
+
+        .dark-mode .quantity-button {
+          color: #4a90e2;
+        }
+
+        .dark-mode .remove-button {
+          color: #ff6b6b;
+        }
+
+        .dark-mode .log-total {
+          background-color: #3c3c3c;
+        }
+
+        @media (max-width: 1024px) {
+          .waste-container {
+            padding: 10px;
+          }
+
+          .waste-main {
+            grid-template-columns: 1fr;
+          }
+        }
+
         @media (max-width: 768px) {
-          .header {
+          .waste-header {
             flex-direction: column;
-            gap: 15px;
+            gap: 10px;
           }
 
-          .header-actions {
-            flex-direction: column;
+          .header-left,
+          .header-right {
             width: 100%;
-          }
-
-          .add-button,
-          .export-button {
-            width: 100%;
-            justify-content: center;
-          }
-
-          .filters {
-            flex-direction: column;
+            justify-content: space-between;
           }
 
           .search-container {
             width: 100%;
           }
 
-          .date-range {
-            width: 100%;
-            justify-content: space-between;
+          .waste-menu-section {
+            margin-top: 20px;
           }
 
-          .form-grid {
-            grid-template-columns: 1fr;
+          .items-grid {
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
           }
 
-          .stat-card {
-            padding: 15px;
+          .category-filters {
+            overflow-x: auto;
+            padding-bottom: 10px;
+            -webkit-overflow-scrolling: touch;
           }
 
-          .waste-table {
-            font-size: 14px;
+          .category-button {
+            white-space: nowrap;
           }
         }
 
         @media (max-width: 480px) {
-          .waste-table-container {
-            margin: 0 -20px;
-            width: calc(100% + 40px);
-            border-radius: 0;
+          .items-grid {
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
           }
 
-          .modal-content {
-            padding: 16px;
+          .waste-menu-item {
+            padding: 10px;
           }
 
-          .quick-actions {
-            flex-direction: column;
+          .item-name {
+            font-size: 12px;
           }
 
-          .action-button {
-            width: 100%;
-            justify-content: center;
+          .notification {
+            width: 90%;
+            left: 5%;
+            right: 5%;
           }
         }
-        `}
-      </style>
+
+        @media print {
+          .waste-container {
+            background: white;
+          }
+
+          .waste-header,
+          .waste-menu-section,
+          .submit-log-button,
+          .nav-button {
+            display: none;
+          }
+
+          .waste-log-section {
+            width: 100%;
+            box-shadow: none;
+          }
+
+          .notification {
+            display: none;
+          }
+        }
+      `}</style>
     </div>
   )
 }

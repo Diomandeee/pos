@@ -923,9 +923,9 @@ const ActiveOrders: React.FC = () => {
         <Link href="/reports" passHref>
           <button className="nav-button">Go to Reports</button>
         </Link>
-        <Link href="/settings" passHref>
+        {/* <Link href="/settings" passHref>
           <button className="nav-button">Go to Settings</button>
-        </Link>
+        </Link> */}
       </div>
 
       <style>{`
