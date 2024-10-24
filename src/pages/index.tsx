@@ -1,4 +1,21 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import Link from 'next/link'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
+import {
+  format,
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  startOfYear,
+  endOfYear,
+  subDays,
+  eachDayOfInterval,
+  isSameDay
+} from 'date-fns'
 import {
   BarChart,
   Bar,
@@ -8,216 +25,647 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  LineChart,
-  Line
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  ScatterChart,
+  Scatter,
+  AreaChart,
+  Area,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  ComposedChart
 } from 'recharts'
 import {
-  Coffee,
+  Download,
   DollarSign,
-  Users,
   TrendingUp,
-  AlertCircle,
+  Coffee,
+  Clock,
   RefreshCw,
+  AlertTriangle,
+  Loader,
+  Users,
+  ShoppingCart,
+  Percent,
+  Calendar,
+  Award,
+  AlertCircle,
   Settings,
-  ChevronRight
+  ArrowDownRight,
+  Minus
 } from 'lucide-react'
-import Link from 'next/link'
-
 interface Order {
   id: number
   customerName: string
   total: number
   status: string
   timestamp: string
-  items: { name: string; quantity: number; price: number }[]
+  items: Array<{
+    name: string
+    quantity: number
+    price: number
+    category: string
+  }>
   isComplimentary: boolean
+  preparationTime?: number
+  queueTime: number
 }
 
-interface SalesData {
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: unknown) => jsPDF
+  }
+}
+
+type TimeRange = 'day' | 'week' | 'month' | 'year' | 'custom'
+
+const COLORS = [
+  '#0088FE',
+  '#00C49F',
+  '#FFBB28',
+  '#FF8042',
+  '#8884D8',
+  '#82ca9d',
+  '#ffc658'
+]
+
+interface TrendMetrics {
   date: string
   sales: number
   orders: number
+  movingAverageSales: number
+  movingAverageOrders: number
+  salesGrowth: number
+  ordersGrowth: number
+  trend: 'up' | 'down' | 'stable'
 }
 
-interface TopSellingItem {
-  name: string
-  quantity: number
-}
-
-const Dashboard: React.FC = () => {
+const Reports: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([])
-  const [salesData, setSalesData] = useState<SalesData[]>([])
-  const [topSellingItems, setTopSellingItems] = useState<TopSellingItem[]>([])
-  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [timeRange, setTimeRange] = useState<TimeRange>('week')
+  const [customStartDate, setCustomStartDate] = useState<Date | null>(null)
+  const [customEndDate, setCustomEndDate] = useState<Date | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [timeRange, setTimeRange] = useState<string>('today')
-
-  const processSalesData = useCallback(
-    (orders: Order[], timeRange: string): SalesData[] => {
-      const now = new Date()
-      const filteredOrders = orders.filter((order) => {
-        const orderDate = new Date(order.timestamp)
-        if (timeRange === 'today') {
-          return orderDate.toDateString() === now.toDateString()
-        } else if (timeRange === 'week') {
-          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-          return orderDate >= weekAgo
-        } else if (timeRange === 'month') {
-          const monthAgo = new Date(
-            now.getFullYear(),
-            now.getMonth() - 1,
-            now.getDate()
-          )
-          return orderDate >= monthAgo
-        }
-        return true
-      })
-
-      const salesByDate: { [key: string]: { sales: number; orders: number } } =
-        {}
-      filteredOrders.forEach((order) => {
-        const date = new Date(order.timestamp).toISOString().split('T')[0]
-        if (!salesByDate[date]) {
-          salesByDate[date] = { sales: 0, orders: 0 }
-        }
-        salesByDate[date].sales += order.isComplimentary ? 0 : order.total
-        salesByDate[date].orders += 1
-      })
-
-      return Object.entries(salesByDate)
-        .map(([date, data]) => ({
-          date,
-          sales: data.sales,
-          orders: data.orders
-        }))
-        .sort((a, b) => a.date.localeCompare(b.date))
-    },
-    []
+  const [selectedMetric, setSelectedMetric] = useState<'sales' | 'orders'>(
+    'sales'
   )
 
-  const processTopSellingItems = useCallback(
-    (orders: Order[], timeRange: string): TopSellingItem[] => {
-      const now = new Date()
-      const filteredOrders = orders.filter((order) => {
-        const orderDate = new Date(order.timestamp)
-        if (timeRange === 'today') {
-          return orderDate.toDateString() === now.toDateString()
-        } else if (timeRange === 'week') {
-          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-          return orderDate >= weekAgo
-        } else if (timeRange === 'month') {
-          const monthAgo = new Date(
-            now.getFullYear(),
-            now.getMonth() - 1,
-            now.getDate()
-          )
-          return orderDate >= monthAgo
-        }
-        return true
-      })
-
-      const itemCounts: { [key: string]: number } = {}
-      filteredOrders.forEach((order) => {
-        order.items.forEach((item) => {
-          if (!itemCounts[item.name]) {
-            itemCounts[item.name] = 0
-          }
-          itemCounts[item.name] += item.quantity
-        })
-      })
-
-      return Object.entries(itemCounts)
-        .map(([name, quantity]) => ({ name, quantity }))
-        .sort((a, b) => b.quantity - a.quantity)
-        .slice(0, 5)
-    },
-    []
-  )
-
-  const fetchDashboardData = useCallback(() => {
+  const fetchOrders = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     try {
+      await new Promise((resolve) => setTimeout(resolve, 500))
       const storedOrders = JSON.parse(
         localStorage.getItem('orders') || '[]'
       ) as Order[]
       setOrders(storedOrders)
-
-      const processedSalesData = processSalesData(storedOrders, timeRange)
-      setSalesData(processedSalesData)
-
-      const processedTopSellingItems = processTopSellingItems(
-        storedOrders,
-        timeRange
-      )
-      setTopSellingItems(processedTopSellingItems)
     } catch (err) {
-      setError('Failed to fetch dashboard data. Please try again.')
+      setError('Failed to fetch orders. Please try again.')
     } finally {
       setIsLoading(false)
     }
-  }, [timeRange, processSalesData, processTopSellingItems])
+  }, [])
 
   useEffect(() => {
-    fetchDashboardData()
-  }, [fetchDashboardData])
+    fetchOrders()
+  }, [fetchOrders])
+
+  const getDateRange = useCallback(() => {
+    const now = new Date()
+    switch (timeRange) {
+      case 'day':
+        return { start: startOfDay(now), end: endOfDay(now) }
+      case 'week':
+        return { start: startOfWeek(now), end: endOfWeek(now) }
+      case 'month':
+        return { start: startOfMonth(now), end: endOfMonth(now) }
+      case 'year':
+        return { start: startOfYear(now), end: endOfYear(now) }
+      case 'custom':
+        return {
+          start: customStartDate
+            ? startOfDay(customStartDate)
+            : startOfDay(now),
+          end: customEndDate ? endOfDay(customEndDate) : endOfDay(now)
+        }
+      default:
+        return { start: startOfWeek(now), end: endOfWeek(now) }
+    }
+  }, [timeRange, customStartDate, customEndDate])
+
+  const filteredOrders = useMemo(() => {
+    const { start, end } = getDateRange()
+    return orders.filter((order) => {
+      const orderDate = new Date(order.timestamp)
+      return orderDate >= start && orderDate <= end
+    })
+  }, [orders, getDateRange])
+
+  const salesData = useMemo(() => {
+    const { start, end } = getDateRange()
+    const days = eachDayOfInterval({ start, end })
+    const data: { [key: string]: { sales: number; orders: number } } = {}
+
+    days.forEach((day) => {
+      const date = format(day, 'yyyy-MM-dd')
+      data[date] = { sales: 0, orders: 0 }
+    })
+
+    filteredOrders.forEach((order) => {
+      const date = format(new Date(order.timestamp), 'yyyy-MM-dd')
+      if (!data[date]) {
+        data[date] = { sales: 0, orders: 0 }
+      }
+      data[date].sales += order.isComplimentary ? 0 : order.total
+      data[date].orders += 1
+    })
+    return Object.entries(data)
+      .map(([date, values]) => ({
+        date,
+        sales: values.sales,
+        orders: values.orders
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }, [filteredOrders, getDateRange])
+
+  const topSellingItems = useMemo(() => {
+    const itemCounts: { [key: string]: { quantity: number; revenue: number } } =
+      {}
+    filteredOrders.forEach((order) => {
+      order.items.forEach((item) => {
+        if (!itemCounts[item.name]) {
+          itemCounts[item.name] = { quantity: 0, revenue: 0 }
+        }
+        itemCounts[item.name].quantity += item.quantity
+        itemCounts[item.name].revenue += item.price * item.quantity
+      })
+    })
+    return Object.entries(itemCounts)
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 10)
+  }, [filteredOrders])
 
   const totalSales = useMemo(() => {
-    return orders
-      .filter((order) => !order.isComplimentary)
-      .reduce((sum, order) => sum + order.total, 0)
-      .toFixed(2)
-  }, [orders])
+    return filteredOrders.reduce(
+      (sum, order) => sum + (order.isComplimentary ? 0 : order.total),
+      0
+    )
+  }, [filteredOrders])
 
-  const totalOrders = useMemo(() => {
-    return orders.length
-  }, [orders])
+  const totalOrders = useMemo(() => filteredOrders.length, [filteredOrders])
 
   const averageOrderValue = useMemo(() => {
-    const paidOrders = orders.filter((order) => !order.isComplimentary)
-    return paidOrders.length > 0
-      ? (
-          paidOrders.reduce((sum, order) => sum + order.total, 0) /
-          paidOrders.length
-        ).toFixed(2)
-      : '0.00'
-  }, [orders])
+    const paidOrders = filteredOrders.filter((order) => !order.isComplimentary)
+    return paidOrders.length > 0 ? totalSales / paidOrders.length : 0
+  }, [filteredOrders, totalSales])
 
-  const recentOrders = useMemo(() => {
-    return orders
-      .sort(
-        (a, b) =>
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      )
-      .slice(0, 5)
+  const averagePreparationTime = useMemo(() => {
+    const ordersWithPrepTime = filteredOrders.filter(
+      (order) => order.preparationTime !== undefined
+    )
+    if (ordersWithPrepTime.length === 0) {
+      return 0
+    }
+    return Math.round(
+      ordersWithPrepTime.reduce(
+        (sum, order) => sum + (order.preparationTime || 0),
+        0
+      ) / ordersWithPrepTime.length
+    )
+  }, [filteredOrders])
+
+  const calculateMovingAverage = (data: number[], periods: number) => {
+    return data.map((_, index) => {
+      const start = Math.max(0, index - periods + 1)
+      const values = data.slice(start, index + 1)
+      return values.reduce((sum, val) => sum + val, 0) / values.length
+    })
+  }
+
+  const enhancedSalesTrend = useMemo((): TrendMetrics[] => {
+    const baseData = salesData.map((item) => ({
+      date: item.date,
+      sales: item.sales,
+      orders: item.orders
+    }))
+
+    const salesValues = baseData.map((item) => item.sales)
+    const ordersValues = baseData.map((item) => item.orders)
+
+    const movingAverageSales = calculateMovingAverage(salesValues, 7)
+    const movingAverageOrders = calculateMovingAverage(ordersValues, 7)
+
+    return baseData.map((item, index) => {
+      const previousSales = salesValues[index - 1] || salesValues[index]
+      const previousOrders = ordersValues[index - 1] || ordersValues[index]
+
+      const salesGrowth = ((item.sales - previousSales) / previousSales) * 100
+      const ordersGrowth =
+        ((item.orders - previousOrders) / previousOrders) * 100
+
+      const trend =
+        salesGrowth > 1 ? 'up' : salesGrowth < -1 ? 'down' : 'stable'
+
+      return {
+        date: item.date,
+        sales: item.sales,
+        orders: item.orders,
+        movingAverageSales: movingAverageSales[index],
+        movingAverageOrders: movingAverageOrders[index],
+        salesGrowth,
+        ordersGrowth,
+        trend
+      }
+    })
+  }, [salesData])
+  // Add a helper function to format time in minutes:seconds
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
+  const salesByCategory = useMemo(() => {
+    const categorySales: { [key: string]: number } = {}
+    filteredOrders.forEach((order) => {
+      order.items.forEach((item) => {
+        categorySales[item.category] =
+          (categorySales[item.category] || 0) + item.price * item.quantity
+      })
+    })
+    return Object.entries(categorySales).map(([name, value]) => ({
+      name,
+      value
+    }))
+  }, [filteredOrders])
+
+  const ordersByHour = useMemo(() => {
+    const hourlyOrders: { [key: number]: number } = {}
+    filteredOrders.forEach((order) => {
+      const hour = new Date(order.timestamp).getHours()
+      hourlyOrders[hour] = (hourlyOrders[hour] || 0) + 1
+    })
+    return Array.from({ length: 24 }, (_, i) => ({
+      hour: i,
+      orders: hourlyOrders[i] || 0
+    }))
+  }, [filteredOrders])
+
+  const preparationTimeVsOrderValue = useMemo(() => {
+    return filteredOrders
+      .filter((order) => order.preparationTime !== undefined)
       .map((order) => ({
-        id: order.id,
-        customerName: order.customerName,
-        total: order.total,
-        status: order.status,
-        time: new Date(order.timestamp).toLocaleTimeString()
+        preparationTime: order.preparationTime || 0,
+        orderValue: order.total
       }))
-  }, [orders])
+  }, [filteredOrders])
+
+  const uniqueCustomers = useMemo(() => {
+    return new Set(filteredOrders.map((order) => order.customerName)).size
+  }, [filteredOrders])
+
+  const repeatCustomerRate = useMemo(() => {
+    const customerOrderCounts = filteredOrders.reduce((acc, order) => {
+      acc[order.customerName] = (acc[order.customerName] || 0) + 1
+      return acc
+    }, {} as { [key: string]: number })
+    const repeatCustomers = Object.values(customerOrderCounts).filter(
+      (count) => count > 1
+    ).length
+    return uniqueCustomers > 0 ? (repeatCustomers / uniqueCustomers) * 100 : 0
+  }, [filteredOrders, uniqueCustomers])
+
+  const averageItemsPerOrder = useMemo(() => {
+    const totalItems = filteredOrders.reduce(
+      (sum, order) =>
+        sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
+      0
+    )
+    return totalOrders > 0 ? totalItems / totalOrders : 0
+  }, [filteredOrders, totalOrders])
+
+  const salesTrend = useMemo(() => {
+    const { start, end } = getDateRange()
+    const days = eachDayOfInterval({ start, end })
+    const salesByDay: { [key: string]: number } = {}
+
+    days.forEach((day) => {
+      const date = format(day, 'yyyy-MM-dd')
+      salesByDay[date] = 0
+    })
+
+    filteredOrders.forEach((order) => {
+      const date = format(new Date(order.timestamp), 'yyyy-MM-dd')
+      salesByDay[date] += order.isComplimentary ? 0 : order.total
+    })
+
+    return Object.entries(salesByDay)
+      .map(([date, sales]) => ({ date, sales }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }, [filteredOrders, getDateRange])
+
+  const customerRetentionRate = useMemo(() => {
+    const { start } = getDateRange()
+    const previousPeriodStart = subDays(
+      start,
+      getDateRange().end.getTime() - start.getTime()
+    )
+
+    const currentCustomers = new Set(
+      filteredOrders.map((order) => order.customerName)
+    )
+    const previousCustomers = new Set(
+      orders
+        .filter((order) => {
+          const orderDate = new Date(order.timestamp)
+          return orderDate >= previousPeriodStart && orderDate < start
+        })
+        .map((order) => order.customerName)
+    )
+
+    const retainedCustomers = [...currentCustomers].filter((customer) =>
+      previousCustomers.has(customer)
+    ).length
+    return previousCustomers.size > 0
+      ? (retainedCustomers / previousCustomers.size) * 100
+      : 0
+  }, [filteredOrders, orders, getDateRange])
+
+  // New metrics
+  const peakHourSales = useMemo(() => {
+    const hourlyData = filteredOrders.reduce((acc, order) => {
+      const hour = new Date(order.timestamp).getHours()
+      acc[hour] = (acc[hour] || 0) + (order.isComplimentary ? 0 : order.total)
+      return acc
+    }, {} as { [key: number]: number })
+
+    if (Object.keys(hourlyData).length === 0) {
+      return { hour: 'N/A', sales: 0 }
+    }
+
+    const peakHour = Object.entries(hourlyData).reduce((a, b) =>
+      a[1] > b[1] ? a : b
+    )
+    return { hour: peakHour[0], sales: peakHour[1] }
+  }, [filteredOrders])
+  const salesGrowthRate = useMemo(() => {
+    const { start, end } = getDateRange()
+    const periodLength = end.getTime() - start.getTime()
+    const previousPeriodStart = new Date(start.getTime() - periodLength)
+
+    const currentPeriodSales = filteredOrders.reduce(
+      (sum, order) => sum + (order.isComplimentary ? 0 : order.total),
+      0
+    )
+    const previousPeriodSales = orders
+      .filter((order) => {
+        const orderDate = new Date(order.timestamp)
+        return orderDate >= previousPeriodStart && orderDate < start
+      })
+      .reduce(
+        (sum, order) => sum + (order.isComplimentary ? 0 : order.total),
+        0
+      )
+
+    return previousPeriodSales !== 0
+      ? ((currentPeriodSales - previousPeriodSales) / previousPeriodSales) * 100
+      : 100 // If previous period had no sales, consider it 100% growth
+  }, [filteredOrders, orders, getDateRange])
+
+  // New charts data
+  const categoryPerformance = useMemo(() => {
+    const categoryData: { [key: string]: { sales: number; orders: number } } =
+      {}
+    filteredOrders.forEach((order) => {
+      order.items.forEach((item) => {
+        if (!categoryData[item.category]) {
+          categoryData[item.category] = { sales: 0, orders: 0 }
+        }
+        categoryData[item.category].sales += item.price * item.quantity
+        categoryData[item.category].orders += item.quantity
+      })
+    })
+    return Object.entries(categoryData).map(([category, data]) => ({
+      category,
+      sales: data.sales,
+      orders: data.orders
+    }))
+  }, [filteredOrders])
+
+  const dailySalesAndOrders = useMemo(() => {
+    const { start, end } = getDateRange()
+    const days = eachDayOfInterval({ start, end })
+    const dailyData: {
+      [key: string]: { date: string; sales: number; orders: number }
+    } = {}
+
+    days.forEach((day) => {
+      const date = format(day, 'yyyy-MM-dd')
+      dailyData[date] = { date, sales: 0, orders: 0 }
+    })
+
+    filteredOrders.forEach((order) => {
+      const date = format(new Date(order.timestamp), 'yyyy-MM-dd')
+      dailyData[date].sales += order.isComplimentary ? 0 : order.total
+      dailyData[date].orders += 1
+    })
+
+    return Object.values(dailyData).sort((a, b) => a.date.localeCompare(b.date))
+  }, [filteredOrders, getDateRange])
+  const generateCSV = useCallback(() => {
+    // Prepare CSV headers
+    const headers = [
+      'Date',
+      'Total Sales ($)',
+      'Orders',
+      'Average Order Value ($)',
+      'Unique Customers',
+      'Preparation Time (min:sec)',
+      'Items Sold'
+    ]
+
+    // Prepare daily data
+    const csvData = dailySalesAndOrders.map((day) => {
+      const dayOrders = filteredOrders.filter((order) =>
+        isSameDay(new Date(order.timestamp), new Date(day.date))
+      )
+
+      const dayUniqueCustomers = new Set(
+        dayOrders.map((order) => order.customerName)
+      ).size
+
+      const dayAvgOrderValue = day.sales / (day.orders || 1)
+
+      const dayPrepTime = dayOrders
+        .filter((order) => order.preparationTime)
+        .reduce(
+          (avg, order, _, arr) =>
+            avg + (order.preparationTime || 0) / (arr.length || 1),
+          0
+        )
+
+      const dayItemsSold = dayOrders.reduce(
+        (sum, order) =>
+          sum +
+          order.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
+        0
+      )
+
+      return [
+        day.date,
+        day.sales.toFixed(2),
+        day.orders,
+        dayAvgOrderValue.toFixed(2),
+        dayUniqueCustomers,
+        formatTime(dayPrepTime),
+        dayItemsSold
+      ]
+    })
+
+    // Add summary data
+    const summaryData = [
+      ['Summary Statistics'],
+      ['Total Period Sales ($)', totalSales.toFixed(2)],
+      ['Total Orders', totalOrders],
+      ['Average Order Value ($)', averageOrderValue.toFixed(2)],
+      ['Unique Customers', uniqueCustomers],
+      ['Customer Retention Rate (%)', customerRetentionRate.toFixed(2)],
+      ['Average Preparation Time', formatTime(averagePreparationTime)],
+      ['Repeat Customer Rate (%)', repeatCustomerRate.toFixed(2)],
+      ['Sales Growth Rate (%)', salesGrowthRate.toFixed(2)],
+      [''],
+      ['Top Selling Items'],
+      ['Item Name', 'Quantity Sold', 'Revenue ($)'],
+      ...topSellingItems.map((item) => [
+        item.name,
+        item.quantity,
+        item.revenue.toFixed(2)
+      ]),
+      [''],
+      ['Sales by Category'],
+      ['Category', 'Total Sales ($)'],
+      ...salesByCategory.map((category) => [
+        category.name,
+        category.value.toFixed(2)
+      ])
+    ]
+
+    // Combine all data
+    const allRows = [
+      ['Daily Sales Report'],
+      [
+        `Report Period: ${format(
+          getDateRange().start,
+          'yyyy-MM-dd'
+        )} to ${format(getDateRange().end, 'yyyy-MM-dd')}`
+      ],
+      [''],
+      headers,
+      ...csvData,
+      [''],
+      ...summaryData
+    ]
+
+    // Convert to CSV string
+    const csvContent = allRows.map((row) => row.join(',')).join('\n')
+
+    // Create and trigger download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `sales-report-${format(new Date(), 'yyyy-MM-dd')}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }, [
+    dailySalesAndOrders,
+    filteredOrders,
+    totalSales,
+    totalOrders,
+    averageOrderValue,
+    uniqueCustomers,
+    customerRetentionRate,
+    averagePreparationTime,
+    repeatCustomerRate,
+    salesGrowthRate,
+    topSellingItems,
+    salesByCategory,
+    getDateRange,
+    formatTime
+  ])
+  if (isLoading) {
+    return (
+      <div className="loading-container">
+        <Loader size={48} className="spin" />
+        <p>Loading report data...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="error-container">
+        <AlertTriangle size={48} />
+        <p>{error}</p>
+        <button onClick={fetchOrders} className="retry-button">
+          <RefreshCw size={16} /> Retry
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div className="dashboard-container">
-      <h1 className="page-title">Dashboard</h1>
+    <div className="reports-container">
+      <h1 className="page-title">Sales Reports</h1>
 
-      {isLoading && <div className="loading">Loading dashboard data...</div>}
-      {error && <div className="error">{error}</div>}
-
-      <div className="dashboard-controls">
+      <div className="controls">
         <select
           value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
+          onChange={(e) => setTimeRange(e.target.value as TimeRange)}
           className="time-range-select"
         >
-          <option value="today">Today</option>
+          <option value="day">Today</option>
           <option value="week">This Week</option>
           <option value="month">This Month</option>
+          <option value="year">This Year</option>
+          <option value="custom">Custom Range</option>
         </select>
-        <button onClick={fetchDashboardData} className="refresh-button">
+        {timeRange === 'custom' && (
+          <div className="custom-date-range">
+            <DatePicker
+              selected={customStartDate}
+              onChange={(date) => setCustomStartDate(date)}
+              selectsStart
+              startDate={customStartDate}
+              endDate={customEndDate}
+              maxDate={new Date()}
+              placeholderText="Start Date"
+              className="custom-date-input"
+            />
+            <DatePicker
+              selected={customEndDate}
+              onChange={(date) => setCustomEndDate(date)}
+              selectsEnd
+              startDate={customStartDate}
+              endDate={customEndDate}
+              minDate={customStartDate}
+              maxDate={new Date()}
+              placeholderText="End Date"
+              className="custom-date-input"
+            />
+          </div>
+        )}
+        <button onClick={fetchOrders} className="refresh-button">
           <RefreshCw size={16} /> Refresh Data
+        </button>
+        <button onClick={generateCSV} className="download-button">
+          <Download size={16} /> Download Report
         </button>
       </div>
 
@@ -228,7 +676,7 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="metric-content">
             <h3>Total Sales</h3>
-            <p className="metric-value">${totalSales}</p>
+            <p className="metric-value">${totalSales.toFixed(2)}</p>
           </div>
         </div>
         <div className="metric-card">
@@ -246,7 +694,16 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="metric-content">
             <h3>Average Order Value</h3>
-            <p className="metric-value">${averageOrderValue}</p>
+            <p className="metric-value">${averageOrderValue.toFixed(2)}</p>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon">
+            <Clock size={24} />
+          </div>
+          <div className="metric-content">
+            <h3>Avg Preparation Time</h3>
+            <p className="metric-value">{formatTime(averagePreparationTime)}</p>
           </div>
         </div>
         <div className="metric-card">
@@ -254,75 +711,321 @@ const Dashboard: React.FC = () => {
             <Users size={24} />
           </div>
           <div className="metric-content">
-            <h3>Customer Satisfaction</h3>
-            <p className="metric-value">N/A</p>
+            <h3>Unique Customers</h3>
+            <p className="metric-value">{uniqueCustomers}</p>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon">
+            <Percent size={24} />
+          </div>
+          <div className="metric-content">
+            <h3>Repeat Customer Rate</h3>
+            <p className="metric-value">{repeatCustomerRate.toFixed(2)}%</p>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon">
+            <ShoppingCart size={24} />
+          </div>
+          <div className="metric-content">
+            <h3>Avg Items Per Order</h3>
+            <p className="metric-value">{averageItemsPerOrder.toFixed(2)}</p>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-icon">
+            <Award size={24} />
+          </div>
+          <div className="metric-content">
+            <h3>Peak Hour Sales</h3>
+            <p className="metric-value">
+              Hour {peakHourSales.hour}, ${peakHourSales.sales.toFixed(2)}
+            </p>
           </div>
         </div>
       </div>
 
-      <div className="charts-container">
-        <div className="chart-card">
-          <h3>Sales Trend</h3>
+      <div className="chart-grid">
+        <div className="chart-card advanced">
+          <h3>Sales and Orders Trend Analysis</h3>
+          <div className="chart-controls">
+            <button
+              onClick={() => setSelectedMetric('orders')}
+              className={`chart-control-button ${
+                selectedMetric === 'sales' ? 'active' : ''
+              }`}
+            >
+              Sales
+            </button>
+            <button
+              onClick={() => setSelectedMetric('orders')}
+              className={`chart-control-button ${
+                selectedMetric === 'orders' ? 'active' : ''
+              }`}
+            >
+              Orders
+            </button>
+          </div>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={salesData}>
+            <ComposedChart data={enhancedSalesTrend}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" />
-              <YAxis />
+              <YAxis yAxisId="left" />
+              <YAxis yAxisId="right" orientation="right" />
+              <Tooltip
+                formatter={(value, name) => {
+                  if (typeof name === 'string' && name.includes('Growth')) {
+                    return [`${Number(value).toFixed(2)}%`, name]
+                  }
+                  return [value, name]
+                }}
+              />
+              <Legend />
+              {selectedMetric === 'sales' ? (
+                <>
+                  <Bar
+                    yAxisId="left"
+                    dataKey="sales"
+                    fill="#8884d8"
+                    name="Sales"
+                  />
+                  <Line
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey="movingAverageSales"
+                    stroke="#82ca9d"
+                    name="7-day Moving Average"
+                    dot={false}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="salesGrowth"
+                    stroke="#ff7300"
+                    name="Growth Rate %"
+                  />
+                </>
+              ) : (
+                <>
+                  <Bar
+                    yAxisId="left"
+                    dataKey="orders"
+                    fill="#82ca9d"
+                    name="Orders"
+                  />
+                  <Line
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey="movingAverageOrders"
+                    stroke="#8884d8"
+                    name="7-day Moving Average"
+                    dot={false}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="ordersGrowth"
+                    stroke="#ff7300"
+                    name="Growth Rate %"
+                  />
+                </>
+              )}
+            </ComposedChart>
+          </ResponsiveContainer>
+          <div className="trend-indicators">
+            <div className="trend-summary">
+              <h4>Trend Analysis</h4>
+              <p>
+                7-day Moving Average:{' '}
+                {selectedMetric === 'sales'
+                  ? `$${enhancedSalesTrend[
+                      enhancedSalesTrend.length - 1
+                    ]?.movingAverageSales.toFixed(2)}`
+                  : enhancedSalesTrend[
+                      enhancedSalesTrend.length - 1
+                    ]?.movingAverageOrders.toFixed(1)}
+              </p>
+              <p>
+                Growth Rate:{' '}
+                {selectedMetric === 'sales'
+                  ? `${enhancedSalesTrend[
+                      enhancedSalesTrend.length - 1
+                    ]?.salesGrowth.toFixed(2)}%`
+                  : `${enhancedSalesTrend[
+                      enhancedSalesTrend.length - 1
+                    ]?.ordersGrowth.toFixed(2)}%`}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="chart-card">
+          <h3>Sales by Category</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={salesByCategory}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="value"
+                label={({ name, percent }) =>
+                  `${name} ${(percent * 100).toFixed(0)}%`
+                }
+              >
+                {salesByCategory.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={COLORS[index % COLORS.length]}
+                  />
+                ))}
+              </Pie>
               <Tooltip />
               <Legend />
-              <Line type="monotone" dataKey="sales" stroke="#8884d8" />
-            </LineChart>
+            </PieChart>
           </ResponsiveContainer>
         </div>
         <div className="chart-card">
           <h3>Top Selling Items</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={topSellingItems}>
+            <BarChart data={topSellingItems} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
+              <XAxis type="number" />
+              <YAxis dataKey="name" type="category" width={150} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="quantity" fill="#8884d8" name="Quantity" />
+              <Bar dataKey="revenue" fill="#82ca9d" name="Revenue ($)" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="chart-card">
+          <h3>Orders by Hour</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={ordersByHour}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="hour" />
               <YAxis />
               <Tooltip />
               <Legend />
-              <Bar dataKey="quantity" fill="#82ca9d" />
+              <Bar dataKey="orders" fill="#8884d8" />
             </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="chart-card">
+          <h3>Preparation Time vs Order Value</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <ScatterChart>
+              <CartesianGrid />
+              <XAxis
+                type="number"
+                dataKey="preparationTime"
+                name="Preparation Time"
+                tickFormatter={(value) => formatTime(value)}
+              />
+              <YAxis
+                type="number"
+                dataKey="orderValue"
+                name="Order Value"
+                unit="$"
+              />
+              <Tooltip
+                formatter={(value, name) => {
+                  if (name === 'preparationTime') {
+                    return [formatTime(value as number), name]
+                  }
+                  return [value, name]
+                }}
+              />
+              <Scatter
+                name="Orders"
+                data={preparationTimeVsOrderValue}
+                fill="#8884d8"
+              />
+            </ScatterChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="chart-card">
+          <h3>Sales Trend</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={salesTrend}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Area
+                type="monotone"
+                dataKey="sales"
+                stroke="#8884d8"
+                fill="#8884d8"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="chart-card">
+          <h3>Category Performance</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <RadarChart
+              cx="50%"
+              cy="50%"
+              outerRadius="80%"
+              data={categoryPerformance}
+            >
+              <PolarGrid />
+              <PolarAngleAxis dataKey="category" />
+              <PolarRadiusAxis angle={30} domain={[0, 'auto']} />
+              <Radar
+                name="Sales"
+                dataKey="sales"
+                stroke="#8884d8"
+                fill="#8884d8"
+                fillOpacity={0.6}
+              />
+              <Radar
+                name="Orders"
+                dataKey="orders"
+                stroke="#82ca9d"
+                fill="#82ca9d"
+                fillOpacity={0.6}
+              />
+              <Legend />
+              <Tooltip />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="chart-card">
+          <h3>Daily Sales and Orders</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={dailySalesAndOrders}>
+              <CartesianGrid stroke="#f5f5f5" />
+              <XAxis dataKey="date" scale="band" />
+              <YAxis yAxisId="left" />
+              <YAxis yAxisId="right" orientation="right" />
+              <Tooltip />
+              <Legend />
+              <Bar
+                yAxisId="left"
+                dataKey="orders"
+                barSize={20}
+                fill="#413ea0"
+              />
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="sales"
+                stroke="#ff7300"
+              />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      <div className="recent-orders">
-        <h3>Recent Orders</h3>
-        <table className="orders-table">
-          <thead>
-            <tr>
-              <th>Order ID</th>
-              <th>Customer</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th>Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentOrders.map((order) => (
-              <tr key={order.id}>
-                <td>{order.id}</td>
-                <td>{order.customerName}</td>
-                <td>${order.total.toFixed(2)}</td>
-                <td>
-                  <span className={`status ${order.status.toLowerCase()}`}>
-                    {order.status}
-                  </span>
-                </td>
-                <td>{order.time}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <Link href="/orders" className="view-all-link">
-          View All Orders <ChevronRight size={16} />
-        </Link>
-      </div>
-
-      <div className="quick-actions">
+      {/* <div className="quick-actions">
         <h3>Quick Actions</h3>
         <div className="action-buttons">
           <Link href="/pos" className="action-button">
@@ -331,22 +1034,59 @@ const Dashboard: React.FC = () => {
           <Link href="/inventory" className="action-button">
             <AlertCircle size={20} /> Check Inventory
           </Link>
-          <Link href="/reports" className="action-button">
-            <TrendingUp size={20} /> View Reports
+          <Link href="/waste" className="action-button">
+            <TrendingUp size={20} /> View Waste
           </Link>
           <Link href="/settings" className="action-button">
             <Settings size={20} /> View Settings
           </Link>
-        </div>
-      </div>
-
+          <Link href="/orders" className="action-button">
+            <Settings size={20} /> Go to Orders
+          </Link>
+                  </div>
+      </div> */}
       <style>{`
-        .dashboard-container {
+        /* Base Variables */
+        :root {
+          --primary-color: #4a90e2;
+          --secondary-color: #50e3c2;
+          --accent-color: #f5a623;
+          --background-color: #f8f9fa;
+          --text-color: #333333;
+          --border-color: #e1e4e8;
+          --success-color: #28a745;
+          --warning-color: #ffc107;
+          --danger-color: #dc3545;
+        }
+
+        .nav-buttons {
+          display: flex;
+          justify-content: center;
+          gap: 10px;
+          margin-top: 20px;
+        }
+        .nav-button {
+          padding: 8px 16px;
+          border: none;
+          border-radius: 5px;
+          font-size: 14px;
+          font-weight: bold;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          text-decoration: none;
+          width: 100%;
+        }
+        .reports-container {
           font-family: Arial, sans-serif;
           max-width: 1200px;
           margin: 0 auto;
           padding: 20px;
-          background-color: #f8f9fa;
+          background-color: var(--background-color);
+
         }
 
         .page-title {
@@ -356,58 +1096,65 @@ const Dashboard: React.FC = () => {
           text-align: center;
         }
 
-        .loading,
-        .error {
-          text-align: center;
-          margin-bottom: 20px;
-          padding: 10px;
-          border-radius: 5px;
-        }
-
-        .loading {
-          background-color: #e9ecef;
-          color: #495057;
-        }
-
-        .error {
-          background-color: #f8d7da;
-          color: #721c24;
-        }
-
-        .dashboard-controls {
+        .controls {
           display: flex;
-          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 10px;
           margin-bottom: 20px;
         }
 
         .time-range-select,
-        .refresh-button {
+        .refresh-button,
+        .download-button,
+        .custom-date-input {
           padding: 8px 12px;
-          border: 1px solid #ccc;
-          border-radius: 4px;
           font-size: 14px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          background-color: white;
+          cursor: pointer;
         }
 
-        .refresh-button {
+        .custom-date-range {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .refresh-button,
+        .download-button {
           display: flex;
           align-items: center;
           gap: 5px;
           background-color: #4a90e2;
           color: white;
           border: none;
-          cursor: pointer;
           transition: background-color 0.3s ease;
         }
 
-        .refresh-button:hover {
+        .refresh-button:hover,
+        .download-button:hover {
           background-color: #357abd;
         }
 
         .metrics-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          grid-template-columns: repeat(4, 1fr);
           gap: 20px;
-          margin-bottom: 30px;
+          margin-bottom: 20px;
+        }
+        
+        /* Add responsive breakpoint for mobile */
+        @media (max-width: 768px) {
+          .metrics-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        
+        @media (max-width: 480px) {
+          .metrics-grid {
+            grid-template-columns: 1fr;
+          }
         }
 
         .metric-card {
@@ -417,10 +1164,16 @@ const Dashboard: React.FC = () => {
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
           display: flex;
           align-items: center;
+          transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .metric-card:hover {
+          transform: translateY(-5px);
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
 
         .metric-icon {
-          background-color: #e9ecef;
+          background-color: #f0f0f0;
           border-radius: 50%;
           width: 50px;
           height: 50px;
@@ -432,22 +1185,21 @@ const Dashboard: React.FC = () => {
 
         .metric-content h3 {
           font-size: 14px;
-          color: #6c757d;
-          margin: 0 0 5px 0;
+          color: #666;
+          margin: 0;
         }
 
         .metric-value {
           font-size: 24px;
           font-weight: bold;
-          color: #4a90e2;
-          margin: 0;
+          color: #333;
+          margin: 5px 0 0;
         }
 
-        .charts-container {
+        .chart-grid {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
           gap: 20px;
-          margin-bottom: 30px;
         }
 
         .chart-card {
@@ -459,95 +1211,104 @@ const Dashboard: React.FC = () => {
 
         .chart-card h3 {
           font-size: 18px;
-          color: #495057;
+          color: #333;
           margin-top: 0;
           margin-bottom: 15px;
         }
 
-        .recent-orders {
+        .chart-controls {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 10px;
+        }
+
+        .chart-control-button {
+          padding: 5px 10px;
+          font-size: 14px;
+          border: 1px solid #ddd;
           background-color: white;
+          cursor: pointer;
+          transition: background-color 0.3s ease;
+        }
+
+        .chart-control-button.active {
+          background-color: #4a90e2;
+          color: white;
+        }
+
+        .loading-container,
+        .error-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+        }
+
+        .loading-container p,
+        .error-container p {
+          margin-top: 20px;
+          font-size: 18px;
+          color: #666;
+        }
+
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+        .chart-card.advanced {
+          background-color: #fff;
           border-radius: 8px;
           padding: 20px;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-          margin-bottom: 30px;
+          margin-bottom: 20px;
         }
-
-        .recent-orders h3 {
-          font-size: 18px;
-          color: #495057;
-          margin-top: 0;
-          margin-bottom: 15px;
-        }
-
-        .orders-table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-
-        .orders-table th,
-        .orders-table td {
-          text-align: left;
-          padding: 10px;
-          border-bottom: 1px solid #e9ecef;
-        }
-
-        .orders-table th {
-          background-color: #f8f9fa;
-          font-weight: bold;
-          color: #495057;
-        }
-
-        .status {
-          padding: 3px 8px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: bold;
-          text-transform: uppercase;
-        }
-
-        .status.pending {
-          background-color: #ffeeba;
-          color: #856404;
-        }
-
-        .status.completed {
-          background-color: #d4edda;
-          color: #155724;
-        }
-
-        .status.cancelled {
-          background-color: #f8d7da;
-          color: #721c24;
-        }
-
-        .view-all-link {
-          display: inline-flex;
-          align-items: center;
-          color: #4a90e2;
-          text-decoration: none;
-          font-weight: bold;
+        
+        .trend-indicators {
           margin-top: 15px;
+          padding-top: 15px;
+          border-top: 1px solid #eee;
         }
-
+        
+        .trend-summary {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        
+        .trend-summary h4 {
+          margin: 0;
+          color: #333;
+          font-size: 16px;
+        }
+        
+        .trend-summary p {
+          margin: 0;
+          color: #666;
+          font-size: 14px;
+        }
         .quick-actions {
           background-color: white;
           border-radius: 8px;
           padding: 20px;
+          margin-top: 20px;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
-
-        .quick-actions h3 {
-          font-size: 18px;
-          color: #495057;
-          margin-top: 0;
-          margin-bottom: 15px;
-        }
-
+        
         .action-buttons {
           display: flex;
+          flex-wrap: wrap;
           gap: 15px;
         }
-
+        
         .action-button {
           display: flex;
           align-items: center;
@@ -558,52 +1319,52 @@ const Dashboard: React.FC = () => {
           text-decoration: none;
           border-radius: 5px;
           transition: background-color 0.3s ease;
+          flex: 1;
+          min-width: 150px;
+          justify-content: center;
         }
-
+        
         .action-button:hover {
           background-color: #357abd;
         }
-
+        
         @media (max-width: 768px) {
-          .charts-container {
-            grid-template-columns: 1fr;
-          }
-
           .action-buttons {
             flex-direction: column;
           }
-
+          
           .action-button {
             width: 100%;
-          }
-
-          .metrics-grid {
-            grid-template-columns: repeat(2, 1fr);
+            min-width: unset;
           }
         }
 
-        @media (max-width: 480px) {
-          .dashboard-controls {
+        .retry-button {
+          margin-top: 20px;
+          padding: 10px 20px;
+          font-size: 16px;
+          background-color: #4a90e2;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+        }
+
+
+        @media (max-width: 768px) {
+          .controls {
             flex-direction: column;
-            gap: 10px;
           }
 
-          .time-range-select,
-          .refresh-button {
-            width: 100%;
-          }
-
-          .metrics-grid {
+          .chart-grid {
             grid-template-columns: 1fr;
-          }
-
-          .orders-table {
-            font-size: 14px;
           }
         }
       `}</style>
     </div>
   )
 }
-
-export default Dashboard
+export default Reports

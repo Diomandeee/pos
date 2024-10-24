@@ -56,33 +56,33 @@ const menuItems = [
   { id: 4, name: 'Cappuccino', price: 3.5, category: 'Coffee', popular: true },
   {
     id: 5,
+    name: 'Flat White',
+    price: 3.5,
+    category: 'Coffee',
+    popular: false
+  },
+  { id: 6, name: 'Cortado', price: 3.5, category: 'Coffee', popular: false },
+  {
+    id: 7,
     name: 'Caramel Crunch Crusher',
     price: 4.5,
     category: 'Specialty',
     popular: true
   },
   {
-    id: 6,
+    id: 8,
     name: 'Vanilla Dream Latte',
     price: 4.5,
     category: 'Specialty',
     popular: false
   },
   {
-    id: 7,
+    id: 9,
     name: 'Hazelnut Heaven Cappuccino',
     price: 4.5,
     category: 'Specialty',
     popular: false
-  },
-  {
-    id: 12,
-    name: 'Flat White',
-    price: 3.5,
-    category: 'Coffee',
-    popular: false
-  },
-  { id: 14, name: 'Cortado', price: 3.5, category: 'Coffee', popular: false }
+  }
 ]
 
 const flavorOptions = [
@@ -95,6 +95,7 @@ const flavorOptions = [
 ]
 
 const milkOptions: MilkOption[] = [
+  { name: 'No Milk', price: 0 },
   { name: 'Whole Milk', price: 0 },
   { name: 'Oat Milk', price: 0 }
 ]
@@ -188,10 +189,18 @@ const BufBaristaPOS: React.FC = () => {
   const addToCart = useCallback((item: MenuItem) => {
     setSelectedItem(item)
     setSelectedFlavor('No Flavoring')
-    setSelectedMilk(milkOptions[0])
+
+    // Set default milk based on specific drinks and categories
+    const noMilkDrinks = ['Espresso', 'Americano']
+    const defaultMilk = noMilkDrinks.includes(item.name)
+      ? milkOptions.find((milk) => milk.name === 'No Milk') || milkOptions[0]
+      : item.category === 'Coffee' || item.category === 'Specialty'
+      ? milkOptions.find((milk) => milk.name === 'Whole Milk') || milkOptions[0]
+      : milkOptions[0]
+
+    setSelectedMilk(defaultMilk)
     setIsCustomizationModalOpen(true)
   }, [])
-
   const confirmCustomization = useCallback(() => {
     if (!selectedItem) return
 
@@ -525,7 +534,7 @@ const BufBaristaPOS: React.FC = () => {
           <Link href="/orders" passHref>
             <button className="view-orders-button">View Orders</button>
           </Link>
-          <Link href="/reports" passHref>
+          <Link href="/" passHref>
             <button className="view-orders-button">View Reports</button>
           </Link>
         </section>

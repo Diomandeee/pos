@@ -12,8 +12,6 @@ import {
   Check,
   Moon,
   Sun,
-  DollarSign,
-  Star,
   Clock,
   CalendarDays
 } from 'lucide-react'
@@ -393,6 +391,18 @@ const WasteManagement: React.FC = () => {
       )}
 
       <style>{`
+        /* Base Variables */
+        :root {
+          --primary-color: #4a90e2;
+          --secondary-color: #50e3c2;
+          --accent-color: #f5a623;
+          --background-color: #f8f9fa;
+          --text-color: #333333;
+          --border-color: #e1e4e8;
+          --success-color: #28a745;
+          --warning-color: #ffc107;
+          --danger-color: #dc3545;
+        }
         .waste-container {
           max-width: 1200px;
           margin: 0 auto;

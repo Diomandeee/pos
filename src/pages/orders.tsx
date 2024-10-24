@@ -916,17 +916,17 @@ const ActiveOrders: React.FC = () => {
       )}
 
       {/* Navigation */}
-      <div className="nav-buttons">
+      {/* <div className="nav-buttons">
         <Link href="/pos" passHref>
           <button className="nav-button">Go to POS</button>
         </Link>
-        <Link href="/reports" passHref>
+        <Link href="/" passHref>
           <button className="nav-button">Go to Reports</button>
         </Link>
-        {/* <Link href="/settings" passHref>
+        <Link href="/settings" passHref>
           <button className="nav-button">Go to Settings</button>
-        </Link> */}
-      </div>
+        </Link>
+      </div> */}
 
       <style>{`
         .nav-buttons {

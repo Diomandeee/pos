@@ -604,12 +604,6 @@ const InventoryManagement: React.FC = () => {
         <Link href="/pos" className="action-button">
           <Coffee size={20} /> New Order
         </Link>
-        <Link href="/reports" passHref>
-          <button className="nav-button">Go to Reports</button>
-        </Link>
-        <Link href="/settings" passHref>
-          <button className="nav-button">Go to Settings</button>
-        </Link>
       </div>
 
       <style>{`
