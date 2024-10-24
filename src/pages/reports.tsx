@@ -738,10 +738,10 @@ const Reports: React.FC = () => {
           <div className="metric-icon">
             <Calendar size={24} />
           </div>
-          <div className="metric-content">
+          {/* <div className="metric-content">
             <h3>Customer Retention Rate</h3>
             <p className="metric-value">{customerRetentionRate.toFixed(2)}%</p>
-          </div>
+          </div> */}
         </div>
         <div className="metric-card">
           <div className="metric-icon">
@@ -758,10 +758,10 @@ const Reports: React.FC = () => {
           <div className="metric-icon">
             <TrendingUp size={24} />
           </div>
-          <div className="metric-content">
+          {/* <div className="metric-content">
             <h3>Sales Growth Rate</h3>
             <p className="metric-value">{salesGrowthRate.toFixed(2)}%</p>
-          </div>
+          </div> */}
         </div>
       </div>
 
@@ -1299,5 +1299,4 @@ const Reports: React.FC = () => {
     </div>
   )
 }
-
 export default Reports

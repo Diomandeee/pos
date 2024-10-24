@@ -926,11 +926,6 @@ const ActiveOrders: React.FC = () => {
         <Link href="/settings" passHref>
           <button className="nav-button">Go to Settings</button>
         </Link>
-        <Link href="/" passHref>
-          <button className="nav-button" style={{ backgroundColor: '' }}>
-            Go to Dashboard
-          </button>
-        </Link>
       </div>
 
       <style>{`
